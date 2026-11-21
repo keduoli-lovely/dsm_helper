@@ -308,7 +308,7 @@ class _TaskCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: Text(task.title, style: context.texts.titleSmall?.copyWith(fontSize: 14.5, height: 1.35), maxLines: 2, overflow: TextOverflow.ellipsis),
+                child: Text(task.title, style: context.texts.titleSmall?.copyWith(fontSize: 14.5, height: 1.35), maxLines: 1, overflow: TextOverflow.ellipsis),
               ),
               const SizedBox(width: 8),
               Container(

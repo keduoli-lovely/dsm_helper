@@ -169,16 +169,44 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     showAppSheet(
       context,
       title: '全局搜索',
-      subtitle: '搜索文件、套件与设备设置',
+      subtitle: '选择要搜索的位置',
       children: [
-        const SheetAction(icon: Icons.folder_open_rounded, label: '在文件中搜索', subtitle: '进入文件页使用文件名搜索'),
-        const SheetAction(icon: Icons.apps_rounded, label: '在应用中心搜索', subtitle: '查看已安装套件'),
-        const SheetAction(icon: Icons.settings_rounded, label: '设备设置', subtitle: '存储、网络与电源控制'),
+        SheetAction(
+          icon: Icons.folder_open_rounded,
+          label: '在文件中搜索',
+          subtitle: '进入文件页按文件名搜索',
+          onTap: () {
+            Navigator.pop(context);
+            widget.onOpenTab(1);
+          },
+        ),
+        SheetAction(
+          icon: Icons.apps_rounded,
+          label: '在应用中心搜索',
+          subtitle: '查找已安装的套件',
+          onTap: () {
+            Navigator.pop(context);
+            widget.onOpenTab(3);
+          },
+        ),
+        SheetAction(
+          icon: Icons.settings_rounded,
+          label: '设备设置',
+          subtitle: '存储、网络与电源控制',
+          onTap: () {
+            Navigator.pop(context);
+            widget.onOpenTab(4);
+          },
+        ),
       ],
     );
   }
 
   void _showNotice(BuildContext context) {
+    final storage = context.read<AppState>().storage;
+    final volumes = storage?.volumes ?? const <VolumeInfo>[];
+    final abnormal = volumes.where((v) => v.status.isNotEmpty && v.status != 'normal').toList();
+    final healthy = abnormal.isEmpty;
     showAppSheet(
       context,
       title: '设备消息',
@@ -190,9 +218,20 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           color: context.colors.surfaceAlt,
           child: Row(
             children: [
-              Icon(Icons.verified_rounded, size: 20, color: context.colors.success),
+              Icon(
+                healthy ? Icons.verified_rounded : Icons.warning_amber_rounded,
+                size: 20,
+                color: healthy ? context.colors.success : context.colors.warning,
+              ),
               const SizedBox(width: 10),
-              Expanded(child: Text('所有存储空间状态正常，SMART 检测通过。', style: context.texts.bodySmall)),
+              Expanded(
+                child: Text(
+                  healthy
+                      ? (volumes.isEmpty ? '设备已连接，等待读取存储状态。' : '${volumes.length} 个存储空间状态正常，SMART 检测通过。')
+                      : '${abnormal.first.name} 状态异常：${abnormal.first.status}',
+                  style: context.texts.bodySmall,
+                ),
+              ),
             ],
           ),
         ),
