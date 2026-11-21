@@ -330,8 +330,36 @@ class DsmService {
     }
     final list = (data['packages'] as List?) ?? const [];
     var packages = list.whereType<Map>().map((e) => DsmPackage.fromJson(e.cast<String, dynamic>())).toList();
-    // 少数 DSM 版本列表接口不返回 status，用 Polling.Data 补齐运行状态。
-    if (packages.isNotEmpty && packages.every((p) => !p.statusKnown)) {
+    // v1 在部分 DSM 7 上会把 status 省略或统一返回 stop，再用 v2 校正一次。
+    if (packages.isNotEmpty && !packages.any((p) => p.isRunning)) {
+      try {
+        final data2 = await client.callMap(
+          api: 'SYNO.Core.Package',
+          method: 'list',
+          version: 2,
+          params: {
+            'additional': ['description', 'status', 'startable', 'installed_info', 'dsm_apps', 'url'],
+            'polling_interval': 15,
+          },
+        );
+        final list2 = (data2['packages'] as List?) ?? const [];
+        final byId = <String, DsmPackage>{};
+        for (final raw in list2.whereType<Map>()) {
+          final pkg = DsmPackage.fromJson(raw.cast<String, dynamic>());
+          if (pkg.id.isNotEmpty) byId[pkg.id.toLowerCase()] = pkg;
+        }
+        if (byId.isNotEmpty) {
+          packages = packages.map((p) {
+            final other = byId[p.id.toLowerCase()];
+            return other != null && other.statusKnown ? p.copyWith(status: other.status) : p;
+          }).toList();
+        }
+      } on DsmException {
+        // 继续走 Polling.Data 兜底。
+      }
+    }
+    // 仍然全部为停止/未知时，用运行中的进程数据补齐。
+    if (packages.isNotEmpty && !packages.any((p) => p.isRunning)) {
       final running = await _runningPackageIds();
       if (running.isNotEmpty) {
         packages = packages.map((p) => p.copyWith(status: running.contains(p.id.toLowerCase()) ? 'running' : 'stopped')).toList();
