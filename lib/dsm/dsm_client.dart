@@ -257,6 +257,7 @@ class DsmClient {
       'method': 'upload',
       'version': '2',
       if (sid.isNotEmpty) '_sid': sid,
+      if (synoToken.isNotEmpty) 'SynoToken': synoToken,
     });
     final request = http.MultipartRequest('POST', uri)..headers.addAll(_headers);
     request.fields.addAll({
