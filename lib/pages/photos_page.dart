@@ -88,7 +88,12 @@ class _PhotosPageState extends State<PhotosPage> {
     final state = context.read<AppState>();
     final source = state.photoSource;
     if (source.type == PhotoSourceType.folder) {
-      if (background) return;
+      if (background) {
+        final cached = _cache[_cacheKey(source)];
+        final stale = cached == null || cached.items.length < 20 || DateTime.now().difference(cached.savedAt) > const Duration(minutes: 5);
+        if (stale) await _startFolderStream(state, source, keepExisting: true);
+        return;
+      }
       await _startFolderStream(state, source);
       return;
     }
@@ -171,6 +176,7 @@ class _PhotosPageState extends State<PhotosPage> {
     if (!keepExisting) _seen.clear();
     setState(() {
       _loading = !keepExisting;
+      _refreshing = keepExisting;
       if (!keepExisting) _items.clear();
       _hasMore = false;
       _loadingMore = false;

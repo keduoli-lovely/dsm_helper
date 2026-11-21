@@ -766,6 +766,15 @@ class DsmService {
     return cursor.images.skip(offset).take(limit).toList();
   }
 
+  bool _isSystemPhotoPath(String path) {
+    for (final part in path.split('/')) {
+      if (part.isEmpty) continue;
+      final lower = part.toLowerCase();
+      if (lower == '@eadir' || lower == '@recycle' || lower == '#recycle' || lower == '.@__thumb' || lower == '@tmp') return true;
+      if (part.startsWith('@') || part.startsWith('#')) return true;
+    }
+    return false;
+  }
   Stream<PhotoItem> folderPhotoStream(String path) {
     final controller = StreamController<PhotoItem>();
     final queue = <String>[path];
@@ -800,12 +809,12 @@ class DsmService {
           final map = raw.cast<String, dynamic>();
           final filePath = '${map['path'] ?? ''}';
           if (map['isdir'] == true) {
-            if (filePath.isNotEmpty) queue.add(filePath);
+            if (filePath.isNotEmpty && !_isSystemPhotoPath(filePath)) queue.add(filePath);
             continue;
           }
           final name = '${map['name'] ?? ''}';
           if (!RegExp(r'\.(jpe?g|png|gif|webp|bmp|heic|heif)$', caseSensitive: false).hasMatch(name)) continue;
-          if (!visited.add(filePath)) continue;
+          if (_isSystemPhotoPath(filePath) || !visited.add(filePath)) continue;
           final additional = (map['additional'] as Map?)?.cast<String, dynamic>() ?? const {};
           final time = (additional['time'] as Map?)?.cast<String, dynamic>() ?? const {};
           final mtime = (time['mtime'] as num?)?.toInt();
@@ -831,7 +840,7 @@ class DsmService {
 
     void pump() {
       if (closed) return;
-      while (active < 6 && queue.isNotEmpty) {
+      while (active < 12 && queue.isNotEmpty) {
         final dir = queue.removeAt(0);
         active++;
         scanDir(dir).whenComplete(() {
@@ -883,7 +892,7 @@ class DsmService {
         final map = raw.cast<String, dynamic>();
         final filePath = '${map['path'] ?? ''}';
         if (map['isdir'] == true) {
-          if (filePath.isNotEmpty) cursor.queue.add(filePath);
+          if (filePath.isNotEmpty && !_isSystemPhotoPath(filePath)) cursor.queue.add(filePath);
           continue;
         }
         final name = '${map['name'] ?? ''}';
