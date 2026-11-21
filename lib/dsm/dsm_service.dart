@@ -753,6 +753,21 @@ class DsmService {
     }).toList();
   }
 
+  PhotoItem refreshPhotoItem(PhotoItem item) {
+    if (item.path.isNotEmpty) {
+      return item.copyWith(
+        thumbUrl: thumbnailUri(item.path, size: 'small')?.toString() ?? item.thumbUrl,
+        originalUrl: downloadUri(item.path, open: true).toString(),
+      );
+    }
+    if (item.id.isNotEmpty && (item.thumbUrl.contains('SYNO.Foto.Thumbnail') || item.originalUrl.contains('SYNO.Foto.Thumbnail'))) {
+      return item.copyWith(
+        thumbUrl: _fotoThumbUrl(item.id, null, 'm'),
+        originalUrl: _fotoThumbUrl(item.id, null, 'xl'),
+      );
+    }
+    return item;
+  }
   String _fotoThumbUrl(String id, String? cacheKey, String size) {
     return client
         .rawUri('entry.cgi', {
@@ -764,6 +779,7 @@ class DsmService {
           'type': '"unit"',
           'cache_key': '"${cacheKey ?? ''}"',
           if (client.sessionId.isNotEmpty) '_sid': client.sessionId,
+          if (client.synoToken.isNotEmpty) 'SynoToken': client.synoToken,
         })
         .toString();
   }

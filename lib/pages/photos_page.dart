@@ -79,17 +79,14 @@ class _PhotosPageState extends State<PhotosPage> {
     }
     try {
       final prefs = await SharedPreferences.getInstance();
-      final raw = prefs.getString('photo_index_v1_');
+      final raw = prefs.getString('photo_index_v2_$key');
       if (raw == null || raw.isEmpty) return;
       final list = jsonDecode(raw) as List;
       final service = context.read<AppState>().service;
       final items = list.whereType<Map>().map((e) {
         final item = PhotoItem.fromJson(e.cast<String, dynamic>());
-        if (service == null || item.path.isEmpty) return item;
-        return item.copyWith(
-          thumbUrl: service.thumbnailUri(item.path, size: 'small')?.toString() ?? item.thumbUrl,
-          originalUrl: service.downloadUri(item.path, open: true).toString(),
-        );
+        if (service == null) return item;
+        return service.refreshPhotoItem(item);
       }).toList();
       if (items.isEmpty || !mounted) return;
       setState(() {
@@ -106,7 +103,7 @@ class _PhotosPageState extends State<PhotosPage> {
     _cache[key] = _PhotoCache(List.unmodifiable(_items.take(5000).toList()), false, DateTime.now());
     try {
       final prefs = await SharedPreferences.getInstance();
-      await prefs.setString('photo_index_v1_', jsonEncode(_items.take(5000).map((e) => e.toJson()).toList()));
+      await prefs.setString('photo_index_v2_$key', jsonEncode(_items.take(5000).map((e) => e.toJson()).toList()));
     } catch (_) {}
   }
 

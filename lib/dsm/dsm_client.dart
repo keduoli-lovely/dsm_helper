@@ -361,6 +361,7 @@ class DsmClient {
       'path': jsonEncode([path]),
       'mode': open ? 'open' : 'download',
       if (sid.isNotEmpty) '_sid': sid,
+      if (synoToken.isNotEmpty) 'SynoToken': synoToken,
     });
   }
 
@@ -372,6 +373,7 @@ class DsmClient {
       'path': jsonEncode([path]),
       'size': size,
       if (sid.isNotEmpty) '_sid': sid,
+      if (synoToken.isNotEmpty) 'SynoToken': synoToken,
     });
   }
 
