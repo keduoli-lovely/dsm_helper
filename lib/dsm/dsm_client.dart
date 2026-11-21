@@ -258,8 +258,13 @@ class DsmClient {
       'version': '3',
       if (sid.isNotEmpty) '_sid': sid,
     });
-    final request = http.MultipartRequest('POST', uri);
+    final request = http.MultipartRequest('POST', uri)
+      ..headers.addAll({
+        if (cookie.isNotEmpty) 'Cookie': cookie,
+        if (synoToken.isNotEmpty) 'X-SYNO-TOKEN': synoToken,
+      });
     request.fields.addAll({
+      if (sid.isNotEmpty) '_sid': sid,
       'path': destDir,
       'create_parents': 'false',
       'overwrite': 'overwrite',
