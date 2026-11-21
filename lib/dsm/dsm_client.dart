@@ -257,17 +257,11 @@ class DsmClient {
       'method': 'upload',
       'version': '3',
       if (sid.isNotEmpty) '_sid': sid,
-      if (synoToken.isNotEmpty) 'SynoToken': synoToken,
     });
-    final request = http.MultipartRequest('POST', uri)
-      ..headers.addAll({
-        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
-        if (cookie.isNotEmpty) 'Cookie': cookie,
-        if (synoToken.isNotEmpty) 'X-SYNO-TOKEN': synoToken,
-      });
+    final request = http.MultipartRequest('POST', uri);
     request.fields.addAll({
       'path': destDir,
-      'create_parents': 'true',
+      'create_parents': 'false',
       'overwrite': 'overwrite',
     });
     var sent = 0;
