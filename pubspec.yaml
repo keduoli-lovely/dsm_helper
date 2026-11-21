@@ -2,7 +2,7 @@ name: dsm_helper
 description: "群晖助手 · 参考飞牛 App 重新设计的群晖 DSM 管理端"
 publish_to: 'none'
 
-version: 1.0.0+100
+version: 1.0.1+101
 
 environment:
   sdk: ^3.6.0

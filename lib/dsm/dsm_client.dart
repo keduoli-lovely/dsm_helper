@@ -99,7 +99,7 @@ class DsmClient {
       'version': '6',
       'api': 'SYNO.API.Auth',
       'method': 'login',
-      'session': 'FileStation',
+      'session': 'webui',
       'format': 'sid',
       'enable_device_token': rememberDevice ? 'yes' : 'no',
       'enable_syno_token': 'yes',
@@ -119,7 +119,7 @@ class DsmClient {
         'api': 'SYNO.API.Auth',
         'version': '4',
         'method': 'logout',
-        'session': 'FileStation',
+        'session': 'webui',
         '_sid': sid,
       });
     } catch (_) {}
