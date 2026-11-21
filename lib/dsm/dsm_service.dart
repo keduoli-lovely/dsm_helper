@@ -765,6 +765,64 @@ class DsmService {
     return cursor.images.skip(offset).take(limit).toList();
   }
 
+  Stream<PhotoItem> folderPhotoStream(String path) async* {
+    final queue = <String>[path];
+    final visited = <String>{};
+    while (queue.isNotEmpty) {
+      final dir = queue.removeAt(0);
+      if (!visited.add(dir)) continue;
+      var offset = 0;
+      while (true) {
+        Map<String, dynamic> data;
+        try {
+          data = await client.callMap(
+            api: 'SYNO.FileStation.List',
+            method: 'list',
+            version: 2,
+            params: {
+              'folder_path': dir,
+              'offset': offset,
+              'limit': 500,
+              'sort_by': 'mtime',
+              'sort_direction': 'desc',
+              'additional': ['size', 'time', 'type'],
+            },
+          );
+        } catch (_) {
+          break;
+        }
+        final files = (data['files'] as List?) ?? const [];
+        for (final raw in files.whereType<Map>()) {
+          final map = raw.cast<String, dynamic>();
+          final filePath = '${map['path'] ?? ''}';
+          if (map['isdir'] == true) {
+            if (filePath.isNotEmpty) queue.add(filePath);
+            continue;
+          }
+          final name = '${map['name'] ?? ''}';
+          if (!RegExp(r'\.(jpe?g|png|gif|webp|bmp|heic|heif)$', caseSensitive: false).hasMatch(name)) continue;
+          if (!visited.add(filePath)) continue;
+          final additional = (map['additional'] as Map?)?.cast<String, dynamic>() ?? const {};
+          final time = (additional['time'] as Map?)?.cast<String, dynamic>() ?? const {};
+          final mtime = (time['mtime'] as num?)?.toInt();
+          final size = (additional['size'] as num?)?.toInt() ?? 0;
+          yield PhotoItem(
+            id: filePath,
+            name: name,
+            takenAt: mtime == null ? null : DateTime.fromMillisecondsSinceEpoch(mtime * 1000),
+            createdAt: mtime == null ? null : DateTime.fromMillisecondsSinceEpoch(mtime * 1000),
+            size: size,
+            path: filePath,
+            thumbUrl: thumbnailUri(filePath, size: 'small')?.toString() ?? '',
+            originalUrl: downloadUri(filePath, open: true).toString(),
+          );
+        }
+        final total = (data['total'] as num?)?.toInt() ?? files.length;
+        offset += files.length;
+        if (files.isEmpty || files.length < 500 || offset >= total) break;
+      }
+    }
+  }
   Future<void> _scanNextFolder(_FolderPhotoCursor cursor) async {
     if (cursor.queue.isEmpty) {
       cursor.done = true;

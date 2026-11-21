@@ -298,15 +298,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
             _addToolFlow();
           },
         ),
-        SheetAction(
-          icon: Icons.radar_rounded,
-          label: '扫描局域网',
-          subtitle: '自动发现 qBittorrent / Aria2',
-          onTap: () {
-            Navigator.pop(context);
-            _discoverTools();
-          },
-        ),
+
       ],
     );
   }
@@ -576,7 +568,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
                   borderRadius: BorderRadius.circular(26),
                   boxShadow: [BoxShadow(color: const Color(0xFF16C08E).withValues(alpha: 0.32), blurRadius: 24, offset: const Offset(0, 12))],
                 ),
-                child: const Icon(Icons.download_rounded, size: 40, color: Colors.white),
+                child: const Icon(Icons.cloud_download_rounded, size: 40, color: Colors.white),
               ),
               const SizedBox(height: 18),
               Text('还没有下载工具', style: context.texts.headlineSmall),
@@ -595,12 +587,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
                   label: const Text('添加下载工具'),
                 ),
               ),
-              const SizedBox(height: 10),
-              TextButton.icon(
-                onPressed: _discoverTools,
-                icon: const Icon(Icons.radar_rounded, size: 18),
-                label: const Text('扫描局域网自动发现'),
-              ),
+
             ],
           ),
         ),
@@ -800,8 +787,10 @@ class _ToolEditorState extends State<_ToolEditor> {
   late final TextEditingController _apiKey = TextEditingController(text: widget.initial?.apiKey ?? '');
   late final TextEditingController _secret = TextEditingController(text: widget.initial?.secret ?? '');
   late bool _https = widget.initial?.https ?? false;
+  late bool _useApiKey = (widget.initial?.apiKey.isNotEmpty ?? false) || widget.initial == null;
   bool _testing = false;
   String? _error;
+  String? _success;
 
   @override
   void dispose() {
@@ -824,9 +813,9 @@ class _ToolEditorState extends State<_ToolEditor> {
       host: _host.text.trim(),
       port: _port.text.trim().isEmpty ? (type == DownloadToolType.aria2 ? '6800' : '8080') : _port.text.trim(),
       https: _https,
-      username: _username.text.trim(),
-      password: _password.text,
-      apiKey: _apiKey.text.trim(),
+      username: type == DownloadToolType.qbittorrent && !_useApiKey ? _username.text.trim() : '',
+      password: type == DownloadToolType.qbittorrent && !_useApiKey ? _password.text : '',
+      apiKey: type == DownloadToolType.qbittorrent && _useApiKey ? _apiKey.text.trim() : '',
       secret: _secret.text.trim(),
     );
   }
@@ -840,17 +829,19 @@ class _ToolEditorState extends State<_ToolEditor> {
     setState(() {
       _testing = true;
       _error = null;
+      _success = null;
     });
     try {
       final adapter = adapterFor(tool, widget.service);
       await adapter.testConnection();
       adapter.dispose();
       if (!mounted) return;
+      setState(() => _success = '连接成功');
       showToast(context, '连接成功');
     } on DsmException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      if (mounted) setState(() { _error = e.message; _success = null; });
     } catch (e) {
-      if (mounted) setState(() => _error = '连接失败，请检查地址、端口以及服务是否已启动');
+      if (mounted) setState(() { _error = '连接失败，请检查地址、端口以及服务是否已启动'; _success = null; });
     } finally {
       if (mounted) setState(() => _testing = false);
     }
@@ -944,22 +935,31 @@ class _ToolEditorState extends State<_ToolEditor> {
             ),
             if (_type == DownloadToolType.qbittorrent) ...[
               const SizedBox(height: 10),
-              TextField(
-                controller: _apiKey,
-                obscureText: true,
-                decoration: const InputDecoration(hintText: 'API Key（可选，qBittorrent 5.2+）'),
-              ),
-              const SizedBox(height: 10),
               Row(
                 children: [
-                  Expanded(child: TextField(controller: _username, decoration: const InputDecoration(hintText: '用户名'))),
+                  _AuthPill(label: 'API Key', selected: _useApiKey, onTap: () => setState(() => _useApiKey = true)),
                   const SizedBox(width: 8),
-                  Expanded(child: TextField(controller: _password, obscureText: true, decoration: const InputDecoration(hintText: '密码'))),
+                  _AuthPill(label: '账号登录', selected: !_useApiKey, onTap: () => setState(() => _useApiKey = false)),
                 ],
               ),
+              const SizedBox(height: 10),
+              if (_useApiKey)
+                TextField(
+                  controller: _apiKey,
+                  obscureText: true,
+                  decoration: const InputDecoration(hintText: 'API Key（qBittorrent 5.2+，qbt_ 开头）'),
+                )
+              else
+                Row(
+                  children: [
+                    Expanded(child: TextField(controller: _username, decoration: const InputDecoration(hintText: '用户名'))),
+                    const SizedBox(width: 8),
+                    Expanded(child: TextField(controller: _password, obscureText: true, decoration: const InputDecoration(hintText: '密码'))),
+                  ],
+                ),
               const SizedBox(height: 4),
               Text(
-                'API Key 与账号密码二选一；使用 Key 时不需要登录。',
+                _useApiKey ? '使用 Bearer API Key，不需要账号密码。' : '使用账号密码登录，登录后使用 Cookie 会话。',
                 style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 10.5),
               ),
             ],
@@ -991,6 +991,20 @@ class _ToolEditorState extends State<_ToolEditor> {
                 child: Text(_error!, style: context.texts.labelSmall?.copyWith(color: c.danger)),
               ),
             ],
+            if (_success != null) ...[
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+                decoration: BoxDecoration(color: c.success.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(12)),
+                child: Row(
+                  children: [
+                    Icon(Icons.check_circle_rounded, size: 15, color: c.success),
+                    const SizedBox(width: 6),
+                    Text(_success!, style: context.texts.labelSmall?.copyWith(color: c.success)),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 16),
             Row(
               children: [
@@ -1018,6 +1032,31 @@ class _ToolEditorState extends State<_ToolEditor> {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _AuthPill extends StatelessWidget {
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _AuthPill({required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 160),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        decoration: BoxDecoration(
+          color: selected ? c.primary : c.surfaceAlt,
+          borderRadius: BorderRadius.circular(11),
+        ),
+        child: Text(label, style: context.texts.labelSmall?.copyWith(fontSize: 11, color: selected ? Colors.white : c.textSecondary)),
       ),
     );
   }
