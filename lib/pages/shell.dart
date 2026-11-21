@@ -50,9 +50,24 @@ class _AppShellState extends State<AppShell> {
               left: 0,
               right: 0,
               bottom: 0,
-              child: SafeArea(
-                top: false,
-                child: AppBottomNav(index: _index, onChanged: _switchTab),
+              height: MediaQuery.of(context).padding.bottom,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onVerticalDragUpdate: (_) {},
+                child: const SizedBox.expand(),
+              ),
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onVerticalDragUpdate: (_) {},
+                child: SafeArea(
+                  top: false,
+                  child: AppBottomNav(index: _index, onChanged: _switchTab),
+                ),
               ),
             ),
           ],

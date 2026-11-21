@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'pages/login_page.dart';
 import 'pages/shell.dart';
 import 'state/app_state.dart';
+import 'util/notification_permission.dart';
 import 'theme/app_theme.dart';
 import 'util/http_overrides.dart';
 import 'widgets/ui_kit.dart';
@@ -56,6 +57,7 @@ class _RootPageState extends State<RootPage> {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
+      NotificationPermission.request();
       context.read<AppState>().boot();
     });
   }

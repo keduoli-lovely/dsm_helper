@@ -700,6 +700,7 @@ class _PhotoViewerPageState extends State<_PhotoViewerPage> {
   String? _busyAction;
   late int _index = widget.initialIndex;
   late final PageController _pageController = PageController(initialPage: widget.initialIndex);
+  bool _edgeGuard = false;
 
   PhotoItem get item => widget.items[_index];
 
@@ -935,8 +936,14 @@ class _PhotoViewerPageState extends State<_PhotoViewerPage> {
               ),
             ),
           Expanded(
-            child: PageView.builder(
+            child: Listener(
+              onPointerDown: (event) {
+                final width = MediaQuery.sizeOf(context).width;
+                setState(() => _edgeGuard = event.position.dx < 28 || event.position.dx > width - 28);
+              },
+              child: PageView.builder(
               controller: _pageController,
+              physics: _edgeGuard ? const NeverScrollableScrollPhysics() : const PageScrollPhysics(),
               itemCount: widget.items.length,
               onPageChanged: (index) {
                 setState(() {
@@ -975,6 +982,7 @@ class _PhotoViewerPageState extends State<_PhotoViewerPage> {
                         ),
                 );
               },
+              ),
             ),
           ),
           if (_chrome)

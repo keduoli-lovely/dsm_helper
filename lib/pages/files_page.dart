@@ -157,24 +157,73 @@ class _FilesPageState extends State<FilesPage> {
     final files = await FilePicker.pickFiles();
     if (files.isEmpty) return;
     final service = context.read<AppState>().service!;
+    final progress = ValueNotifier<double>(0);
+    final status = ValueNotifier<String>('准备上传…');
+    BuildContext? dialogContext;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) {
+        dialogContext = ctx;
+        return AlertDialog(
+          title: const Text('上传文件'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              ValueListenableBuilder<double>(
+                valueListenable: progress,
+                builder: (_, value, __) => LinearProgressIndicator(value: value.clamp(0, 1)),
+              ),
+              const SizedBox(height: 12),
+              ValueListenableBuilder<String>(
+                valueListenable: status,
+                builder: (_, value, __) => Text(value, style: context.texts.bodySmall),
+              ),
+            ],
+          ),
+        );
+      },
+    );
     var success = 0;
-    for (final file in files) {
+    var failed = 0;
+    final failedNames = <String>[];
+    for (var i = 0; i < files.length; i++) {
+      final file = files[i];
+      status.value = '正在上传 ${i + 1}/${files.length}：${file.name}';
       try {
         await service.uploadStream(
           filename: file.name,
           stream: file.xFile.openRead(),
           length: await file.xFile.length(),
           destDir: target.path,
+          onProgress: (sent, total) {
+            final fileFraction = total <= 0 ? 1.0 : (sent / total).clamp(0.0, 1.0);
+            progress.value = ((i + fileFraction) / files.length).clamp(0.0, 1.0);
+          },
         );
         success++;
       } catch (e) {
-        if (mounted) showToast(context, '「${file.name}」上传失败', icon: Icons.error_outline_rounded);
+        failed++;
+        failedNames.add(file.name);
       }
     }
-    if (success > 0 && mounted) {
-      showToast(context, '已上传 $success 个文件到「${target.name}」');
-      await _load(silent: true);
+    if (dialogContext != null && Navigator.of(dialogContext!).canPop()) {
+      Navigator.of(dialogContext!).pop();
     }
+    progress.dispose();
+    status.dispose();
+    if (!mounted) return;
+    if (failed == 0) {
+      showToast(context, '已上传 $success 个文件到「${target.name}」');
+    } else {
+      showToast(
+        context,
+        '成功 $success 个，失败 $failed 个${failedNames.isEmpty ? '' : '：${failedNames.first}${failedNames.length > 1 ? ' 等' : ''}'}',
+        icon: Icons.error_outline_rounded,
+      );
+    }
+    if (success > 0) await _load(silent: true);
   }
 
   @override

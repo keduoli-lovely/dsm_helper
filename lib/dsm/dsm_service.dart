@@ -188,9 +188,10 @@ class DsmService {
     required Stream<List<int>> stream,
     required int length,
     required String destDir,
+    void Function(int sent, int total)? onProgress,
   }) async {
     if (demo) return;
-    await client.uploadStream(filename: filename, stream: stream, length: length, destDir: destDir);
+    await client.uploadStream(filename: filename, stream: stream, length: length, destDir: destDir, onProgress: onProgress);
   }
 
   Uri downloadUri(String path, {bool open = false}) {

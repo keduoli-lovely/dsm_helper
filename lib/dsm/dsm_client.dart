@@ -246,6 +246,7 @@ class DsmClient {
     required Stream<List<int>> stream,
     required int length,
     required String destDir,
+    void Function(int sent, int total)? onProgress,
   }) async {
     final uri = _webapi.replace(path: '${_webapi.path}entry.cgi', queryParameters: {
       'api': 'SYNO.FileStation.Upload',
@@ -257,7 +258,13 @@ class DsmClient {
       'overwrite': 'true',
     });
     final request = http.MultipartRequest('POST', uri)..headers.addAll(_headers);
-    request.files.add(http.MultipartFile('file', stream, length, filename: filename));
+    var sent = 0;
+    final tracked = stream.map((chunk) {
+      sent += chunk.length;
+      onProgress?.call(sent, length);
+      return chunk;
+    });
+    request.files.add(http.MultipartFile('file', tracked, length, filename: filename));
     try {
       final streamed = await _http.send(request).timeout(const Duration(minutes: 30));
       final response = await http.Response.fromStream(streamed);
