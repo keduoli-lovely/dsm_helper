@@ -84,8 +84,10 @@ class _DockerPageState extends State<DockerPage> {
   }
 
   Future<void> _pull() async {
+    final state = context.read<AppState>();
     final repository = TextEditingController();
     final tag = TextEditingController(text: 'latest');
+    final mirror = TextEditingController(text: state.dockerMirror);
     await showAppSheet(
       context,
       title: '拉取镜像',
@@ -94,12 +96,24 @@ class _DockerPageState extends State<DockerPage> {
         TextField(controller: repository, decoration: const InputDecoration(hintText: '镜像名称，例如 nginx 或 grafana/grafana')),
         const SizedBox(height: 10),
         TextField(controller: tag, decoration: const InputDecoration(hintText: '标签，默认 latest')),
+        const SizedBox(height: 10),
+        TextField(
+          controller: mirror,
+          decoration: const InputDecoration(hintText: '镜像加速站（可选），如 docker.m.daocloud.io'),
+        ),
+        const SizedBox(height: 4),
+        Text('Docker Hub 镜像会自动拼接加速站前缀；带域名的镜像保持原样。', style: context.texts.labelSmall?.copyWith(color: context.colors.textTertiary, fontSize: 10.5)),
         const SizedBox(height: 16),
         FilledButton(
           onPressed: () async {
-            final repo = repository.text.trim();
+            var repo = repository.text.trim();
             final imageTag = tag.text.trim().isEmpty ? 'latest' : tag.text.trim();
+            final prefix = mirror.text.trim().replaceAll(RegExp(r'/+$'), '');
             if (repo.isEmpty) return;
+            await state.setDockerMirror(prefix);
+            if (prefix.isNotEmpty && !repo.split('/').first.contains('.')) {
+              repo = '$prefix/$repo';
+            }
             Navigator.pop(context);
             try {
               await context.read<AppState>().service!.dockerPull(repo, imageTag);
@@ -115,11 +129,59 @@ class _DockerPageState extends State<DockerPage> {
     );
     repository.dispose();
     tag.dispose();
+    mirror.dispose();
+  }
+
+  Future<DockerImage?> _pickDockerImage() {
+    return showModalBottomSheet<DockerImage>(
+      context: context,
+      backgroundColor: context.colors.surface,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 4, 20, 10),
+              child: Row(
+                children: [
+                  Text('选择已有镜像', style: context.texts.titleMedium),
+                  const Spacer(),
+                  Text('${_images.length} 个', style: context.texts.labelSmall?.copyWith(color: context.colors.textTertiary)),
+                ],
+              ),
+            ),
+            Flexible(
+              child: ListView.separated(
+                shrinkWrap: true,
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                itemCount: _images.length,
+                separatorBuilder: (_, __) => const Divider(height: 1),
+                itemBuilder: (context, index) {
+                  final image = _images[index];
+                  return ListTile(
+                    leading: Icon(Icons.inventory_2_rounded, color: context.colors.primary),
+                    title: Text(image.displayName, maxLines: 1, overflow: TextOverflow.ellipsis),
+                    subtitle: Text(formatBytes(image.size), style: context.texts.labelSmall),
+                    onTap: () => Navigator.pop(context, image),
+                  );
+                },
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _create() async {
+    if (_images.isEmpty) {
+      showToast(context, '还没有镜像，请先拉取镜像', icon: Icons.info_outline_rounded);
+      return;
+    }
+    final selected = await _pickDockerImage();
+    if (selected == null || !mounted) return;
     final name = TextEditingController();
-    final image = TextEditingController();
     final hostPort = TextEditingController();
     final containerPort = TextEditingController();
     final hostPath = TextEditingController();
@@ -134,8 +196,17 @@ class _DockerPageState extends State<DockerPage> {
       children: [
         TextField(controller: name, decoration: const InputDecoration(hintText: '容器名称')),
         const SizedBox(height: 10),
-        TextField(controller: image, decoration: const InputDecoration(hintText: '镜像，例如 nginx:latest')),
-        const SizedBox(height: 10),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+          decoration: BoxDecoration(color: context.colors.surfaceAlt, borderRadius: BorderRadius.circular(14)),
+          child: Row(
+            children: [
+              Icon(Icons.inventory_2_rounded, size: 18, color: context.colors.primary),
+              const SizedBox(width: 8),
+              Expanded(child: Text(selected.displayName, style: context.texts.bodyMedium)),
+            ],
+          ),
+        ),
         Row(
           children: [
             Expanded(child: TextField(controller: hostPort, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: '主机端口'))),
@@ -163,9 +234,9 @@ class _DockerPageState extends State<DockerPage> {
         FilledButton(
           onPressed: () async {
             final containerName = name.text.trim();
-            final imageName = image.text.trim();
-            if (containerName.isEmpty || imageName.isEmpty) {
-              showToast(context, '请填写容器名称和镜像', icon: Icons.info_outline_rounded);
+            final imageName = selected.displayName;
+            if (containerName.isEmpty) {
+              showToast(context, '请填写容器名称', icon: Icons.info_outline_rounded);
               return;
             }
             final profile = <String, dynamic>{
@@ -211,7 +282,6 @@ class _DockerPageState extends State<DockerPage> {
       ],
     );
     name.dispose();
-    image.dispose();
     hostPort.dispose();
     containerPort.dispose();
     hostPath.dispose();

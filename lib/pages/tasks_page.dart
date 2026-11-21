@@ -60,6 +60,38 @@ class _TasksPageState extends State<TasksPage> {
     }
   }
 
+  Future<void> _run(ScheduledTask task) async {
+    try {
+      await context.read<AppState>().service!.runTask(task.id);
+      if (mounted) showToast(context, '已执行「」');
+    } on DsmException catch (e) {
+      if (mounted) showToast(context, e.message, icon: Icons.error_outline_rounded);
+    }
+  }
+
+  Future<void> _delete(ScheduledTask task) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('删除计划任务'),
+        content: Text('确定删除「」？'),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('删除')),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await context.read<AppState>().service!.deleteTask(task.id);
+      if (!mounted) return;
+      showToast(context, '已删除「」');
+      await _load();
+    } on DsmException catch (e) {
+      if (mounted) showToast(context, e.message, icon: Icons.error_outline_rounded);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final c = context.colors;
@@ -118,6 +150,17 @@ class _TasksPageState extends State<TasksPage> {
                                         ),
                                       ),
                                       Switch(value: task.enabled, onChanged: (v) => _toggle(task, v)),
+                                      PopupMenuButton<String>(
+                                        icon: Icon(Icons.more_vert_rounded, color: c.textTertiary, size: 20),
+                                        onSelected: (value) {
+                                          if (value == 'run') _run(task);
+                                          if (value == 'delete') _delete(task);
+                                        },
+                                        itemBuilder: (_) => const [
+                                          PopupMenuItem(value: 'run', child: Text('立即执行')),
+                                          PopupMenuItem(value: 'delete', child: Text('删除任务')),
+                                        ],
+                                      ),
                                     ],
                                   ),
                                 );

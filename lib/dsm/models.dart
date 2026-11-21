@@ -60,6 +60,7 @@ class DsmServer {
         cookie: cookie ?? this.cookie,
       );
 
+
   Map<String, dynamic> toJson() => {
         'host': host,
         'port': port,
@@ -781,6 +782,7 @@ class DownloadTool {
         secret: secret ?? this.secret,
       );
 
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'type': type.name,
@@ -844,6 +846,7 @@ class PhotoSource {
         trustSelfSigned: trustSelfSigned ?? this.trustSelfSigned,
       );
 
+
   Map<String, dynamic> toJson() => {
         'type': type.name,
         'folder_path': folderPath,
@@ -884,6 +887,7 @@ class PhotoItem {
     this.headers = const {},
   });
 
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'name': name,
@@ -896,6 +900,17 @@ class PhotoItem {
         'headers': headers,
       };
 
+  PhotoItem copyWith({String? thumbUrl, String? originalUrl, Map<String, String>? headers}) => PhotoItem(
+        id: id,
+        name: name,
+        takenAt: takenAt,
+        createdAt: createdAt,
+        size: size,
+        path: path,
+        thumbUrl: thumbUrl ?? this.thumbUrl,
+        originalUrl: originalUrl ?? this.originalUrl,
+        headers: headers ?? this.headers,
+      );
   factory PhotoItem.fromJson(Map<String, dynamic> d) => PhotoItem(
         id: _asString(d['id']),
         name: _asString(d['name']),
@@ -943,6 +958,7 @@ class CatalogPackage {
         source: _asString(d['source']),
         beta: d['beta'] == true,
       );
+
 
   Map<String, dynamic> toJson() => {
         'id': id,

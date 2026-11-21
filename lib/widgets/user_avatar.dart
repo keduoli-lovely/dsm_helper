@@ -104,17 +104,18 @@ class ConnectionStatus extends StatelessWidget {
       decoration: BoxDecoration(color: color.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(10)),
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           Container(width: 6, height: 6, decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
           const SizedBox(width: 6),
-          Text(label, style: context.texts.labelSmall?.copyWith(color: color, fontSize: 11, fontWeight: FontWeight.w600)),
+          Text(label, style: context.texts.labelSmall?.copyWith(color: color, fontSize: 10.5, fontWeight: FontWeight.w600, height: 1.1)),
           if (online == true && latencyMs != null) ...[
             const SizedBox(width: 5),
             Text('· $latencyMs ms', style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 10.5)),
           ],
           if (lan) ...[
             const SizedBox(width: 5),
-            Text('· 局域网', style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 10.5)),
+            Text('· 局域网', style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 10.5, height: 1.1)),
           ],
         ],
       ),

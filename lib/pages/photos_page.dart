@@ -82,7 +82,15 @@ class _PhotosPageState extends State<PhotosPage> {
       final raw = prefs.getString('photo_index_v1_');
       if (raw == null || raw.isEmpty) return;
       final list = jsonDecode(raw) as List;
-      final items = list.whereType<Map>().map((e) => PhotoItem.fromJson(e.cast<String, dynamic>())).toList();
+      final service = context.read<AppState>().service;
+      final items = list.whereType<Map>().map((e) {
+        final item = PhotoItem.fromJson(e.cast<String, dynamic>());
+        if (service == null || item.path.isEmpty) return item;
+        return item.copyWith(
+          thumbUrl: service.thumbnailUri(item.path, size: 'small')?.toString() ?? item.thumbUrl,
+          originalUrl: service.downloadUri(item.path, open: true).toString(),
+        );
+      }).toList();
       if (items.isEmpty || !mounted) return;
       setState(() {
         _items.addAll(items);
@@ -240,7 +248,7 @@ class _PhotosPageState extends State<PhotosPage> {
         _pending.add(item);
         _loading = false;
         _refreshing = false;
-        _flushTimer ??= Timer(const Duration(milliseconds: 150), () {
+        _flushTimer ??= Timer(const Duration(milliseconds: 250), () {
           _flushTimer = null;
           _flushPending();
         });
@@ -608,7 +616,7 @@ class _PhotosPageState extends State<PhotosPage> {
                 childAspectRatio: 1,
               ),
               delegate: SliverChildBuilderDelegate(
-                (context, index) => _PhotoTile(item: entry.value[index]),
+                (context, index) => _PhotoTile(item: entry.value[index], items: _items),
                 childCount: entry.value.length,
               ),
             ),
@@ -629,7 +637,8 @@ class _PhotosPageState extends State<PhotosPage> {
 
 class _PhotoTile extends StatelessWidget {
   final PhotoItem item;
-  const _PhotoTile({required this.item});
+  final List<PhotoItem> items;
+  const _PhotoTile({required this.item, required this.items});
 
   @override
   Widget build(BuildContext context) {
@@ -665,7 +674,7 @@ class _PhotoTile extends StatelessWidget {
       );
     }
     return GestureDetector(
-      onTap: () => Navigator.of(context).push(appRoute(_PhotoViewerPage(item: item))),
+      onTap: () => Navigator.of(context).push(appRoute(_PhotoViewerPage(items: items, initialIndex: items.indexOf(item)))),
       child: ClipRRect(
         borderRadius: BorderRadius.circular(12),
         child: Stack(
@@ -677,8 +686,9 @@ class _PhotoTile extends StatelessWidget {
   }
 }
 class _PhotoViewerPage extends StatefulWidget {
-  final PhotoItem item;
-  const _PhotoViewerPage({required this.item});
+  final List<PhotoItem> items;
+  final int initialIndex;
+  const _PhotoViewerPage({required this.items, required this.initialIndex});
 
   @override
   State<_PhotoViewerPage> createState() => _PhotoViewerPageState();
@@ -688,8 +698,10 @@ class _PhotoViewerPageState extends State<_PhotoViewerPage> {
   Map<String, dynamic>? _fileInfo;
   bool _chrome = true;
   String? _busyAction;
+  late int _index = widget.initialIndex;
+  late final PageController _pageController = PageController(initialPage: widget.initialIndex);
 
-  PhotoItem get item => widget.item;
+  PhotoItem get item => widget.items[_index];
 
   String get _url => item.originalUrl.isNotEmpty ? item.originalUrl : item.thumbUrl;
 
@@ -697,6 +709,12 @@ class _PhotoViewerPageState extends State<_PhotoViewerPage> {
   void initState() {
     super.initState();
     if (item.path.isNotEmpty) _loadInfo();
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadInfo() async {
@@ -917,28 +935,39 @@ class _PhotoViewerPageState extends State<_PhotoViewerPage> {
               ),
             ),
           Expanded(
-            child: GestureDetector(
-              onTap: () => setState(() => _chrome = !_chrome),
-              child: _url.isEmpty
-                  ? Center(child: Icon(Icons.image_not_supported_rounded, size: 48, color: c.textTertiary))
-                  : InteractiveViewer(
-                      minScale: 0.8,
-                      maxScale: 4,
-                      child: Center(
-                        child: Image.network(
-                          _url,
-                          headers: item.headers,
-                          fit: BoxFit.contain,
-                          loadingBuilder: (context, child, progress) {
-                            if (progress == null) return child;
-                            return Center(child: CircularProgressIndicator(strokeWidth: 2.2, color: c.textTertiary));
-                          },
-                          errorBuilder: (_, __, ___) => item.thumbUrl.isNotEmpty && item.thumbUrl != _url
-                              ? Image.network(item.thumbUrl, headers: item.headers, fit: BoxFit.contain)
-                              : Icon(Icons.broken_image_rounded, size: 48, color: c.textTertiary),
+            child: PageView.builder(
+              controller: _pageController,
+              itemCount: widget.items.length,
+              onPageChanged: (index) {
+                setState(() {
+                  _index = index;
+                  _fileInfo = null;
+                });
+                if (widget.items[index].path.isNotEmpty) _loadInfo();
+              },
+              itemBuilder: (context, index) {
+                final photo = widget.items[index];
+                final url = photo.originalUrl.isNotEmpty ? photo.originalUrl : photo.thumbUrl;
+                return GestureDetector(
+                  onTap: () => setState(() => _chrome = !_chrome),
+                  child: url.isEmpty
+                      ? Center(child: Icon(Icons.image_not_supported_rounded, size: 48, color: c.textTertiary))
+                      : Center(
+                          child: Image.network(
+                            url,
+                            headers: photo.headers,
+                            fit: BoxFit.contain,
+                            loadingBuilder: (context, child, progress) {
+                              if (progress == null) return child;
+                              return Center(child: CircularProgressIndicator(strokeWidth: 2.2, color: c.textTertiary));
+                            },
+                            errorBuilder: (_, __, ___) => photo.thumbUrl.isNotEmpty && photo.thumbUrl != url
+                                ? Image.network(photo.thumbUrl, headers: photo.headers, fit: BoxFit.contain)
+                                : Icon(Icons.broken_image_rounded, size: 48, color: c.textTertiary),
+                          ),
                         ),
-                      ),
-                    ),
+                );
+              },
             ),
           ),
           if (_chrome)

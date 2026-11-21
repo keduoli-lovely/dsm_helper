@@ -539,13 +539,7 @@ class _TopBar extends StatelessWidget {
         else ...[
           CircleIconButton(icon: Icons.swap_vert_rounded, onTap: onTransfers),
           const SizedBox(width: 2),
-          Badge(
-            backgroundColor: c.danger,
-            smallSize: 7,
-            padding: EdgeInsets.zero,
-            offset: const Offset(-3, 4),
-            child: CircleIconButton(icon: Icons.notifications_none_rounded, onTap: onBell),
-          ),
+          CircleIconButton(icon: Icons.notifications_none_rounded, onTap: onBell),
           const SizedBox(width: 2),
           CircleIconButton(icon: Icons.edit_rounded, onTap: onEdit, size: 20),
         ],

@@ -260,18 +260,21 @@ class _AppsPageState extends State<AppsPage> {
                       ],
                     )
                   else
-                    SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          _FilterPill(label: '全部', selected: _libraryFilter == 0, onTap: () => setState(() => _libraryFilter = 0)),
-                          const SizedBox(width: 8),
-                          _FilterPill(label: '官方', selected: _libraryFilter == 1, onTap: () => setState(() => _libraryFilter = 1)),
-                          const SizedBox(width: 8),
-                          _FilterPill(label: '社区', selected: _libraryFilter == 2, onTap: () => setState(() => _libraryFilter = 2)),
-                          const SizedBox(width: 8),
-                          _FilterPill(label: '可更新', selected: _libraryFilter == 3, onTap: () => setState(() => _libraryFilter = 3)),
-                        ],
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: [
+                            _FilterPill(label: '全部', selected: _libraryFilter == 0, onTap: () => setState(() => _libraryFilter = 0)),
+                            const SizedBox(width: 8),
+                            _FilterPill(label: '官方', selected: _libraryFilter == 1, onTap: () => setState(() => _libraryFilter = 1)),
+                            const SizedBox(width: 8),
+                            _FilterPill(label: '社区', selected: _libraryFilter == 2, onTap: () => setState(() => _libraryFilter = 2)),
+                            const SizedBox(width: 8),
+                            _FilterPill(label: '可更新', selected: _libraryFilter == 3, onTap: () => setState(() => _libraryFilter = 3)),
+                          ],
+                        ),
                       ),
                     ),
                 ],

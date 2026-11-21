@@ -619,6 +619,25 @@ class DsmService {
     );
   }
 
+  Future<void> runTask(String id) async {
+    if (demo) return;
+    await client.callMap(
+      api: 'SYNO.Core.TaskScheduler',
+      method: 'run',
+      version: 1,
+      params: {'id': id},
+    );
+  }
+
+  Future<void> deleteTask(String id) async {
+    if (demo) return;
+    await client.callMap(
+      api: 'SYNO.Core.TaskScheduler',
+      method: 'delete',
+      version: 1,
+      params: {'id': id},
+    );
+  }
   // ---------- 系统控制 ----------
 
   Future<void> power(String action) async {
@@ -797,6 +816,7 @@ class DsmService {
 
     Future<void> scanDir(String dir) async {
       if (!visited.add(dir)) return;
+      await Future<void>.delayed(const Duration(milliseconds: 30));
       final queueStart = queue.length;
       var offset = 0;
       while (true) {
@@ -866,7 +886,7 @@ class DsmService {
 
     void pump() {
       if (closed) return;
-      while (active < 6 && queue.isNotEmpty) {
+      while (active < 3 && queue.isNotEmpty) {
         final dir = queue.removeAt(0);
         active++;
         scanDir(dir).whenComplete(() {

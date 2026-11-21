@@ -25,6 +25,7 @@ class AppState extends ChangeNotifier {
   static const _kAvatar = 'avatar_path_v2';
   static const _kCatalogCache = 'catalog_cache_v1';
   static const _kAccent = 'accent_color_v2';
+  static const _kDockerMirror = 'docker_mirror_v1';
 
   BootPhase phase = BootPhase.booting;
   ThemeMode themeMode = ThemeMode.light;
@@ -54,6 +55,7 @@ class AppState extends ChangeNotifier {
   String? customAvatarPath;
   List<CatalogPackage> catalogCache = [];
   Color accentColor = const Color(0xFF6F86A8);
+  String dockerMirror = '';
 
   static Future<AppState> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -104,6 +106,7 @@ class AppState extends ChangeNotifier {
       }
     }
     customAvatarPath = _prefs.getString(_kAvatar);
+    dockerMirror = _prefs.getString(_kDockerMirror) ?? '';
     final accentValue = _prefs.getInt(_kAccent);
     if (accentValue != null) accentColor = Color(accentValue);
     final rawCatalog = _prefs.getString(_kCatalogCache);
@@ -316,6 +319,12 @@ class AppState extends ChangeNotifier {
       latencyMs = null;
     }
     if (notify) notifyListeners();
+  }
+
+  Future<void> setDockerMirror(String mirror) async {
+    dockerMirror = mirror.trim();
+    await _prefs.setString(_kDockerMirror, dockerMirror);
+    notifyListeners();
   }
 
   Future<void> setAccentColor(Color color) async {
