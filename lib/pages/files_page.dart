@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../dsm/dsm_client.dart';
+import '../dsm/dsm_service.dart';
 import '../dsm/models.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
@@ -28,6 +29,8 @@ class _FilesPageState extends State<FilesPage> {
   bool _loading = true;
   String? _error;
   bool _requested = false;
+  Map<String, int> _folderCounts = {};
+  Map<String, int> _fileCounts = {};
 
   @override
   void initState() {
@@ -48,18 +51,23 @@ class _FilesPageState extends State<FilesPage> {
     _requested = true;
     try {
       final shares = await service.shares();
+      final entriesLists = await Future.wait(shares.map((share) => _safeFiles(service, share.path)));
       final recent = <FileEntry>[];
-      for (final share in shares.take(3)) {
-        try {
-          final files = await service.files(share.path);
-          recent.addAll(files.where((e) => !e.isDir));
-        } catch (_) {}
+      final folderCounts = <String, int>{};
+      final fileCounts = <String, int>{};
+      for (var i = 0; i < shares.length; i++) {
+        final entries = entriesLists[i];
+        folderCounts[shares[i].path] = entries.where((e) => e.isDir).length;
+        fileCounts[shares[i].path] = entries.where((e) => !e.isDir).length;
+        recent.addAll(entries.where((e) => !e.isDir));
       }
       recent.sort((a, b) => (b.mtime ?? DateTime(0)).compareTo(a.mtime ?? DateTime(0)));
       if (!mounted) return;
       setState(() {
         _shares = shares;
         _recent = recent.take(6).toList();
+        _folderCounts = folderCounts;
+        _fileCounts = fileCounts;
         _loading = false;
         _error = null;
       });
@@ -75,6 +83,14 @@ class _FilesPageState extends State<FilesPage> {
         _error = '$e';
         _loading = false;
       });
+    }
+  }
+
+  Future<List<FileEntry>> _safeFiles(DsmService service, String path) async {
+    try {
+      return await service.files(path);
+    } catch (_) {
+      return const [];
     }
   }
 
@@ -262,7 +278,12 @@ class _FilesPageState extends State<FilesPage> {
                     itemCount: _shares.length,
                     itemBuilder: (context, index) {
                       final share = _shares[index];
-                      return _ShareCard(share: share, onTap: () => _openShare(share));
+                      return _ShareCard(
+                        share: share,
+                        folders: _folderCounts[share.path],
+                        files: _fileCounts[share.path],
+                        onTap: () => _openShare(share),
+                      );
                     },
                   ),
                 ),
@@ -370,8 +391,10 @@ class _FilesPageState extends State<FilesPage> {
 
 class _ShareCard extends StatelessWidget {
   final ShareInfo share;
+  final int? folders;
+  final int? files;
   final VoidCallback onTap;
-  const _ShareCard({required this.share, required this.onTap});
+  const _ShareCard({required this.share, required this.onTap, this.folders, this.files});
 
   @override
   Widget build(BuildContext context) {
@@ -404,7 +427,9 @@ class _ShareCard extends StatelessWidget {
           Text(share.name, style: context.texts.titleSmall, maxLines: 1, overflow: TextOverflow.ellipsis),
           const SizedBox(height: 3),
           Text(
-            formatBytes(share.size),
+            folders == null || files == null
+                ? '正在统计…'
+                : (folders == 0 && files == 0 ? '空文件夹' : '$folders 个文件夹 · $files 个文件'),
             style: tabular(context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 11)),
           ),
         ],

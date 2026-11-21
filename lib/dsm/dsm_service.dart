@@ -51,16 +51,38 @@ class DsmService {
 
   Future<Utilization> utilization() async {
     if (demo) return DemoStore.instance.nextUtilization();
-    final data = await client.callMap(
-      api: 'SYNO.Core.System.Utilization',
-      method: 'get',
-      version: 1,
-      params: {
-        'type': 'current',
-        'resource': ['cpu', 'memory', 'network', 'disk'],
-      },
-    );
-    return Utilization.fromJson(data);
+    DsmException? lastError;
+    final attempts = <Map<String, Object?>>[
+      {'version': 2, 'type': 'current', 'resource': ['cpu', 'memory', 'network', 'disk', 'space']},
+      {'version': 1, 'type': 'current', 'resource': ['cpu', 'memory', 'network', 'disk', 'space']},
+      {'version': 1, 'type': 'current', 'resource': 'cpu,memory,network,disk'},
+    ];
+    for (final attempt in attempts) {
+      try {
+        final data = await client.callMap(
+          api: 'SYNO.Core.System.Utilization',
+          method: 'get',
+          version: attempt['version'] as int,
+          params: {'type': attempt['type'], 'resource': attempt['resource']},
+        );
+        if (data.containsKey('cpu') || data.containsKey('memory') || data.containsKey('network') || data.containsKey('disk')) {
+          return Utilization.fromJson(data);
+        }
+      } on DsmException catch (e) {
+        lastError = e;
+      }
+    }
+    throw lastError ?? const DsmException(-1, '设备没有返回资源监控数据');
+  }
+
+  /// 网络往返延迟（毫秒），用于首页连接状态。
+  Future<int> ping() async {
+    if (demo) return 4;
+    try {
+      return await client.ping();
+    } on DsmException {
+      rethrow;
+    }
   }
 
   Future<StorageSnapshot> storage() async {
@@ -306,6 +328,19 @@ class DsmService {
     );
   }
 
+  /// DSM 套件图标路径（与 Web 端使用同一套图标文件）。
+  List<String> packageIconUrls(String id) {
+    if (demo) return const [];
+    final encoded = Uri.encodeComponent(id);
+    return [
+      '${client.baseUrl}/webman/3rdparty/$encoded/images/icon_72.png',
+      '${client.baseUrl}/webman/3rdparty/$encoded/images/icon_64.png',
+      '${client.baseUrl}/webman/3rdparty/$encoded/images/icon_48.png',
+    ];
+  }
+
+  Map<String, String> get imageHeaders => demo ? const {} : client.imageHeaders;
+
   // ---------- 账号 / 日志 / 计划任务 ----------
 
   Future<List<DsmUser>> users() async {
@@ -314,10 +349,40 @@ class DsmService {
       api: 'SYNO.Core.User',
       method: 'list',
       version: 1,
-      params: {'offset': 0, 'limit': 200, 'additional': ['description', 'email', 'groups']},
+      params: {'offset': 0, 'limit': 200, 'additional': ['description', 'email', 'expired', 'groups']},
     );
     final list = (data['users'] as List?) ?? const [];
     return list.whereType<Map>().map((e) => DsmUser.fromJson(e.cast<String, dynamic>())).toList();
+  }
+
+  /// 当前用户资料（含头像候选字段与邮箱）。
+  Future<Map<String, dynamic>> userProfile(String name) async {
+    if (demo) {
+      return {'name': name, 'description': '系统管理员', 'email': 'demo@example.com'};
+    }
+    final data = await client.callMap(
+      api: 'SYNO.Core.User',
+      method: 'get',
+      version: 1,
+      params: {
+        'name': name,
+        'additional': ['description', 'email', 'expired', 'avatar', 'photo', 'profile_photo', 'avatar_url'],
+      },
+    );
+    return data;
+  }
+
+  Future<void> updateUser(String name, {required String description, required String email}) async {
+    if (demo) {
+      DemoStore.instance.updateUser(name, description: description, email: email);
+      return;
+    }
+    await client.callMap(
+      api: 'SYNO.Core.User',
+      method: 'set',
+      version: 1,
+      params: {'name': name, 'description': description, 'email': email},
+    );
   }
 
   Future<List<LogEntry>> logs() async {
@@ -330,6 +395,23 @@ class DsmService {
     );
     final list = (data['logs'] as List?) ?? (data['items'] as List?) ?? const [];
     return list.whereType<Map>().map((e) => LogEntry.fromJson(e.cast<String, dynamic>())).toList();
+  }
+
+  Future<void> clearLogs() async {
+    if (demo) return;
+    try {
+      await client.callMap(
+        api: 'SYNO.Core.SyslogClient.Log',
+        method: 'clear',
+        version: 1,
+        params: {'target': 'LOCAL'},
+      );
+    } on DsmException catch (e) {
+      if (e.code == 102 || e.code == 103 || e.code == 104) {
+        throw const DsmException(-1, '当前 DSM 不允许在 App 内清除日志，请在 Log Center 中操作');
+      }
+      rethrow;
+    }
   }
 
   Future<List<ScheduledTask>> tasks() async {
@@ -380,6 +462,149 @@ class DsmService {
       version: 3,
       params: {'enable_ssh': enabled, 'enable_telnet': false, 'ssh_port': sshPort},
     );
+  }
+
+  // ---------- 文件分享 / 相册 / 头像 ----------
+
+  Future<SharedLink> createSharingLink(String path) async {
+    if (demo) {
+      return SharedLink(id: 'demo', url: 'https://demo.example.com/sharing/demo', expireDate: '永久');
+    }
+    final data = await client.callMap(
+      api: 'SYNO.FileStation.Sharing',
+      method: 'create',
+      version: 3,
+      params: {'path': [path]},
+    );
+    final links = (data['links'] as List?) ?? const [];
+    if (links.isEmpty || links.first is! Map) {
+      throw const DsmException(-1, '创建共享链接失败，请确认账号有分享权限');
+    }
+    return SharedLink.fromJson((links.first as Map).cast<String, dynamic>());
+  }
+
+  Future<List<SharedLink>> sharingLinks() async {
+    if (demo) return const [SharedLink(id: 'demo', url: 'https://demo.example.com/sharing/demo', expireDate: '永久')];
+    final data = await client.callMap(
+      api: 'SYNO.FileStation.Sharing',
+      method: 'list',
+      version: 3,
+      params: {
+        'offset': 0,
+        'limit': 100,
+        'filter_type': 'SYNO.SDS.App.FileStation3.Instance,SYNO.SDS.App.SharingUpload.Application',
+      },
+    );
+    final links = (data['links'] as List?) ?? const [];
+    return links.whereType<Map>().map((e) => SharedLink.fromJson(e.cast<String, dynamic>())).toList();
+  }
+
+  Future<void> deleteSharingLinks(List<String> ids) async {
+    if (demo) return;
+    await client.callMap(
+      api: 'SYNO.FileStation.Sharing',
+      method: 'delete',
+      version: 3,
+      params: {'id': ids},
+    );
+  }
+
+  /// Synology Photos 时间线。
+  Future<List<PhotoItem>> synologyPhotoItems({int offset = 0, int limit = 100}) async {
+    if (demo) return const [];
+    final data = await client.callMap(
+      api: 'SYNO.Foto.Browse.Item',
+      method: 'list',
+      version: 1,
+      params: {
+        'offset': offset,
+        'limit': limit,
+        'sort_by': 'takentime',
+        'sort_direction': 'desc',
+        'additional': ['thumbnail', 'resolution'],
+      },
+    );
+    final list = (data['list'] ?? data['items']) as List? ?? const [];
+    return list.whereType<Map>().map((raw) {
+      final item = raw.cast<String, dynamic>();
+      final additional = (item['additional'] as Map?)?.cast<String, dynamic>() ?? const {};
+      final thumbnail = (additional['thumbnail'] as Map?)?.cast<String, dynamic>() ?? const {};
+      final cacheKey = thumbnail['cache_key']?.toString();
+      final time = item['time'] as num?;
+      final id = '${item['id']}';
+      return PhotoItem(
+        id: id,
+        name: '${item['filename'] ?? ''}',
+        takenAt: time == null ? null : DateTime.fromMillisecondsSinceEpoch(time.toInt() * 1000),
+        thumbUrl: _fotoThumbUrl(id, cacheKey, 'm'),
+        originalUrl: _fotoThumbUrl(id, cacheKey, 'xl'),
+      );
+    }).toList();
+  }
+
+  String _fotoThumbUrl(String id, String? cacheKey, String size) {
+    return client
+        .rawUri('entry.cgi', {
+          'api': 'SYNO.Foto.Thumbnail',
+          'method': 'get',
+          'version': '2',
+          'id': id,
+          'size': size,
+          'type': 'unit',
+          if (cacheKey != null && cacheKey.isNotEmpty) 'cache_key': '"$cacheKey"',
+          if (client.sessionId.isNotEmpty) '_sid': client.sessionId,
+        })
+        .toString();
+  }
+
+  /// 选取一个 DSM 文件夹作为相册（只取图片文件）。
+  Future<List<PhotoItem>> folderPhotoItems(String path) async {
+    final entries = await files(path);
+    return entries
+        .where((e) => !e.isDir && e.kind == FileKind.image)
+        .map((e) => PhotoItem(
+              id: e.path,
+              name: e.name,
+              takenAt: e.mtime,
+              thumbUrl: demo ? '' : (thumbnailUri(e.path, size: 'small')?.toString() ?? ''),
+              originalUrl: demo ? '' : downloadUri(e.path, open: true).toString(),
+            ))
+        .toList();
+  }
+
+  /// 尝试从 DSM 获取当前登录用户的头像地址。
+  Future<String?> avatarUrl(String account) async {
+    if (demo) return null;
+    try {
+      final profile = await userProfile(account);
+      for (final key in ['avatar', 'photo', 'profile_photo', 'avatar_url']) {
+        final value = profile[key];
+        final url = _absoluteUrl(value);
+        if (url != null) return url;
+      }
+      final additional = profile['additional'];
+      if (additional is Map) {
+        for (final key in ['avatar', 'photo', 'profile_photo']) {
+          final url = _absoluteUrl(additional[key]);
+          if (url != null) return url;
+        }
+      }
+    } catch (_) {}
+    try {
+      final data = await client.callMap(api: 'SYNO.Core.PersonalSettings', method: 'get', version: 1);
+      for (final key in ['avatar', 'photo', 'profile_photo', 'avatar_url']) {
+        final url = _absoluteUrl(data[key]);
+        if (url != null) return url;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  String? _absoluteUrl(dynamic value) {
+    if (value is! String || value.isEmpty) return null;
+    if (value.startsWith('http://') || value.startsWith('https://')) return value;
+    if (value.startsWith('/')) return '${client.baseUrl}$value';
+    return null;
   }
 
   Future<Map<String, dynamic>> networkInfo() async {

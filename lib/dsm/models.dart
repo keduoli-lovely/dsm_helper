@@ -459,16 +459,34 @@ class DsmPackage {
   final String name;
   final String version;
   final String status;
-  const DsmPackage({required this.id, required this.name, this.version = '', this.status = 'stopped'});
+  final bool? startable;
+  final String description;
 
-  bool get isRunning => status == 'running';
+  const DsmPackage({
+    required this.id,
+    required this.name,
+    this.version = '',
+    this.status = 'stopped',
+    this.startable,
+    this.description = '',
+  });
+
+  bool get isRunning => status == 'running' || status == 'start';
+  bool get canStart => startable != false && !isSystemService;
   String get displayName => name.isEmpty ? id : name;
+
+  /// 群晖的系统级套件不允许被手动停止（startable=false）。
+  bool get isSystemService => startable == false;
+
+  bool get isDocker => id.toLowerCase().contains('docker') || id.toLowerCase().contains('container');
 
   factory DsmPackage.fromJson(Map<String, dynamic> d) => DsmPackage(
         id: _asString(d['id']),
         name: _asString(d['name'] ?? d['dname']),
         version: _asString(d['version']),
         status: _asString(d['status'], 'stopped'),
+        startable: d['startable'] is bool ? d['startable'] as bool : null,
+        description: _asString(d['description']),
       );
 }
 
@@ -477,13 +495,23 @@ class DsmUser {
   final String description;
   final String group;
   final bool disabled;
-  const DsmUser({required this.name, this.description = '', this.group = '', this.disabled = false});
+  final String email;
+  const DsmUser({required this.name, this.description = '', this.group = '', this.disabled = false, this.email = ''});
 
   factory DsmUser.fromJson(Map<String, dynamic> d) => DsmUser(
         name: _asString(d['name']),
         description: _asString(d['description']),
         group: d['groups'] is List && (d['groups'] as List).isNotEmpty ? _asString((d['groups'] as List).first) : '',
         disabled: d['disabled'] == true || d['expired'] == 'now',
+        email: _asString(d['email']),
+      );
+
+  DsmUser copyWith({String? description, String? email}) => DsmUser(
+        name: name,
+        description: description ?? this.description,
+        group: group,
+        disabled: disabled,
+        email: email ?? this.email,
       );
 }
 
@@ -590,4 +618,176 @@ bool isLanAddress(String host) {
   }
   // 单段主机名（如 nas、homecloud）通常也在局域网内
   return !host.contains(".");
+}
+
+enum DownloadToolType { dsm, qbittorrent, transmission }
+
+/// 用户配置的下载工具，可以是 DSM 自带的 Download Station，也可以是局域网里的 qBittorrent。
+class DownloadTool {
+  final String id;
+  final DownloadToolType type;
+  final String name;
+  final String host;
+  final String port;
+  final bool https;
+  final bool trustSelfSigned;
+  final String username;
+  final String password;
+  final String apiKey;
+
+  const DownloadTool({
+    required this.id,
+    required this.type,
+    this.name = '',
+    this.host = '',
+    this.port = '',
+    this.https = false,
+    this.trustSelfSigned = true,
+    this.username = '',
+    this.password = '',
+    this.apiKey = '',
+  });
+
+  String get baseUrl => '${https ? 'https' : 'http'}://$host:$port';
+
+  String get label {
+    if (name.isNotEmpty) return name;
+    return switch (type) {
+      DownloadToolType.dsm => 'Download Station',
+      DownloadToolType.qbittorrent => 'qBittorrent',
+      DownloadToolType.transmission => 'Transmission',
+    };
+  }
+
+  String get typeLabel => switch (type) {
+        DownloadToolType.dsm => '群晖 Download Station',
+        DownloadToolType.qbittorrent => 'qBittorrent',
+        DownloadToolType.transmission => 'Transmission',
+      };
+
+  DownloadTool copyWith({String? name, String? host, String? port, bool? https, String? username, String? password, String? apiKey}) => DownloadTool(
+        id: id,
+        type: type,
+        name: name ?? this.name,
+        host: host ?? this.host,
+        port: port ?? this.port,
+        https: https ?? this.https,
+        trustSelfSigned: trustSelfSigned,
+        username: username ?? this.username,
+        password: password ?? this.password,
+        apiKey: apiKey ?? this.apiKey,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'type': type.name,
+        'name': name,
+        'host': host,
+        'port': port,
+        'https': https,
+        'trust_self_signed': trustSelfSigned,
+        'username': username,
+        'password': password,
+        'api_key': apiKey,
+      };
+
+  factory DownloadTool.fromJson(Map<String, dynamic> json) => DownloadTool(
+        id: _asString(json['id']),
+        type: DownloadToolType.values.firstWhere((e) => e.name == json['type'], orElse: () => DownloadToolType.qbittorrent),
+        name: _asString(json['name']),
+        host: _asString(json['host']),
+        port: _asString(json['port']),
+        https: json['https'] == true,
+        trustSelfSigned: json['trust_self_signed'] != false,
+        username: _asString(json['username']),
+        password: _asString(json['password']),
+        apiKey: _asString(json['api_key']),
+      );
+}
+
+enum PhotoSourceType { none, folder, synologyPhotos, immich }
+
+class PhotoSource {
+  final PhotoSourceType type;
+  final String folderPath;
+  final String immichUrl;
+  final String immichKey;
+  final bool trustSelfSigned;
+
+  const PhotoSource({
+    this.type = PhotoSourceType.none,
+    this.folderPath = '',
+    this.immichUrl = '',
+    this.immichKey = '',
+    this.trustSelfSigned = true,
+  });
+
+  bool get configured => type != PhotoSourceType.none;
+
+  String get label => switch (type) {
+        PhotoSourceType.none => '未配置',
+        PhotoSourceType.folder => folderPath.isEmpty ? '相册目录' : folderPath,
+        PhotoSourceType.synologyPhotos => 'Synology Photos',
+        PhotoSourceType.immich => 'Immich',
+      };
+
+  PhotoSource copyWith({PhotoSourceType? type, String? folderPath, String? immichUrl, String? immichKey, bool? trustSelfSigned, bool clear = false}) => PhotoSource(
+        type: type ?? this.type,
+        folderPath: folderPath ?? this.folderPath,
+        immichUrl: immichUrl ?? this.immichUrl,
+        immichKey: immichKey ?? this.immichKey,
+        trustSelfSigned: trustSelfSigned ?? this.trustSelfSigned,
+      );
+
+  Map<String, dynamic> toJson() => {
+        'type': type.name,
+        'folder_path': folderPath,
+        'immich_url': immichUrl,
+        'immich_key': immichKey,
+        'trust_self_signed': trustSelfSigned,
+      };
+
+  factory PhotoSource.fromJson(Map<String, dynamic> json) => PhotoSource(
+        type: PhotoSourceType.values.firstWhere((e) => e.name == json['type'], orElse: () => PhotoSourceType.none),
+        folderPath: _asString(json['folder_path']),
+        immichUrl: _asString(json['immich_url']),
+        immichKey: _asString(json['immich_key']),
+        trustSelfSigned: json['trust_self_signed'] != false,
+      );
+}
+
+class PhotoItem {
+  final String id;
+  final String name;
+  final DateTime? takenAt;
+  final String thumbUrl;
+  final String originalUrl;
+  final Map<String, String> headers;
+
+  const PhotoItem({
+    required this.id,
+    required this.name,
+    this.takenAt,
+    this.thumbUrl = '',
+    this.originalUrl = '',
+    this.headers = const {},
+  });
+}
+
+/// 首页可自由开关的卡片。
+enum HomeWidgetType { resource, storage, transfers, overview, network, disks, recentFiles, quickActions, photos, packages, logs }
+
+class SharedLink {
+  final String id;
+  final String url;
+  final String expireDate;
+  final String owner;
+  const SharedLink({required this.id, required this.url, this.expireDate = '', this.owner = ''});
+
+  factory SharedLink.fromJson(Map<String, dynamic> d) => SharedLink(
+        id: _asString(d['id'] ?? d['link_id']),
+        url: _asString(d['url'] ?? d['link_url']),
+        expireDate: _asString(d['expire_date'] ?? d['date_expired']),
+        owner: _asString(d['link_owner'] ?? d['owner']),
+      );
 }

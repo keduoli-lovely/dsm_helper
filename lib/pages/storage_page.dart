@@ -213,9 +213,17 @@ class _VolumeCard extends StatelessWidget {
                   children: [
                     Text(volume.name, style: context.texts.titleSmall?.copyWith(fontSize: 14.5)),
                     const SizedBox(height: 2),
-                    Text(
-                      [volume.fsLabel, volume.raidLabel].where((e) => e.isNotEmpty).join(' · '),
-                      style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 10.5),
+                    Row(
+                      children: [
+                        Text(
+                          [volume.fsLabel, volume.raidLabel].where((e) => e.isNotEmpty).join(' · '),
+                          style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 10.5),
+                        ),
+                        if (volume.status.isNotEmpty && volume.status != 'normal') ...[
+                          const SizedBox(width: 6),
+                          Text(volume.status, style: context.texts.labelSmall?.copyWith(color: c.warning, fontSize: 10.5)),
+                        ],
+                      ],
                     ),
                   ],
                 ),
@@ -275,6 +283,12 @@ class _DiskRow extends StatelessWidget {
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text('${disk.temperature.toStringAsFixed(0)}°C', style: context.texts.labelSmall?.copyWith(color: disk.temperature > 50 ? c.warning : c.success, fontSize: 10.5)),
+            )
+          else
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 4),
+              decoration: BoxDecoration(color: c.surfaceAlt, borderRadius: BorderRadius.circular(8)),
+              child: Text('温度无法获取', style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 10)),
             ),
           const SizedBox(width: 8),
           Container(

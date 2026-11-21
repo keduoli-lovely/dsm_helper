@@ -1,5 +1,6 @@
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -168,6 +169,15 @@ class _FilesBrowserPageState extends State<FilesBrowserPage> {
       title: entry.name,
       subtitle: entry.isDir ? '文件夹' : formatBytes(entry.size),
       children: [
+        SheetAction(
+          icon: Icons.share_rounded,
+          label: '创建共享链接',
+          subtitle: '生成群晖共享链接，可发给朋友',
+          onTap: () {
+            Navigator.pop(context);
+            _shareLink(entry);
+          },
+        ),
         if (!entry.isDir)
           SheetAction(
             icon: Icons.download_rounded,
@@ -245,6 +255,61 @@ class _FilesBrowserPageState extends State<FilesBrowserPage> {
     final uri = state.service!.downloadUri(entry.path);
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) showToast(context, '无法打开下载链接', icon: Icons.error_outline_rounded);
+  }
+
+  Future<void> _shareLink(FileEntry entry) async {
+    final service = context.read<AppState>().service;
+    if (service == null) return;
+    try {
+      final link = await service.createSharingLink(entry.path);
+      if (!mounted) return;
+      await showAppSheet(
+        context,
+        title: '共享链接已创建',
+        subtitle: entry.name,
+        children: [
+          SoftCard(
+            shadow: false,
+            color: context.colors.surfaceAlt,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SelectableText(link.url, style: context.texts.bodySmall?.copyWith(color: context.colors.textPrimary, height: 1.5)),
+                if (link.expireDate.isNotEmpty) ...[
+                  const SizedBox(height: 6),
+                  Text('有效期：${link.expireDate}', style: context.texts.labelSmall?.copyWith(color: context.colors.textTertiary)),
+                ],
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: link.url));
+                    if (mounted) showToast(context, '链接已复制');
+                  },
+                  icon: const Icon(Icons.copy_rounded, size: 18),
+                  label: const Text('复制链接'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () => launchUrl(Uri.parse(link.url), mode: LaunchMode.externalApplication),
+                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                  label: const Text('打开链接'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    } on DsmException catch (e) {
+      if (mounted) showToast(context, e.message, icon: Icons.error_outline_rounded);
+    }
   }
 
   @override

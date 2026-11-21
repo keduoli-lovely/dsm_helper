@@ -8,6 +8,7 @@ import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/feedback.dart';
 import '../widgets/surfaces.dart';
+import '../widgets/user_avatar.dart';
 import '../widgets/ui_kit.dart';
 import 'logs_page.dart';
 import 'storage_page.dart';
@@ -127,20 +128,11 @@ class _SettingsPageState extends State<SettingsPage> {
                 padding: const EdgeInsets.all(18),
                 child: Row(
                   children: [
-                    Container(
-                      width: 58,
-                      height: 58,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        gradient: const LinearGradient(colors: [Color(0xFFFFC080), Color(0xFFFF9F73)]),
-                        boxShadow: [BoxShadow(color: const Color(0xFFFFAE63).withValues(alpha: 0.35), blurRadius: 18, offset: const Offset(0, 8))],
-                      ),
-                      child: Center(
-                        child: Text(
-                          account.isEmpty ? '?' : account.substring(0, 1).toUpperCase(),
-                          style: context.texts.headlineSmall?.copyWith(color: Colors.white),
-                        ),
-                      ),
+                    UserAvatar(
+                      account: account,
+                      imageUrl: state.avatarUrl,
+                      headers: state.imageHeaders,
+                      size: 58,
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -251,22 +243,6 @@ class _SettingsPageState extends State<SettingsPage> {
                       iconColor: c.danger,
                       onTap: () => _showPowerSheet(),
                     ),
-                    SettingRow(
-                      icon: Icons.lock_outline_rounded,
-                      title: '安全与隐私',
-                      subtitle: '账号仅保存在本机',
-                      iconColor: const Color(0xFF6E7A91),
-                      onTap: () => showAppSheet(
-                        context,
-                        title: '安全与隐私',
-                        children: [
-                          Text(
-                            '群晖助手直接通过局域网访问你的 DSM，不经过任何第三方服务器。\n\n登录密码仅保存在本机（可选择不保存），会话在退出时自动注销。',
-                            style: context.texts.bodySmall?.copyWith(height: 1.7),
-                          ),
-                        ],
-                      ),
-                    ),
                   ],
                 ),
               ),
@@ -297,28 +273,11 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: Column(
                   children: [
                     SettingRow(
-                      icon: Icons.info_outline_rounded,
-                      title: '关于群晖助手',
-                      subtitle: '版本 1.0.0 · 全新飞牛风格界面',
-                      iconColor: const Color(0xFF8A96AE),
-                      onTap: () => showAppSheet(
-                        context,
-                        title: '群晖助手',
-                        subtitle: '版本 1.0.0',
-                        children: [
-                          Text(
-                            '为黑群晖与群晖用户打造的手机管理端。界面参考飞牛 fnOS App，功能基于群晖官方 WebAPI 实现。\n\n• 文件管理：浏览、上传、重命名、删除\n• 下载中心：查看、添加、暂停下载任务\n• 资源监控：CPU / 内存 / 网络 / 存储\n• 系统控制：电源、SSH、日志与用户',
-                            style: context.texts.bodySmall?.copyWith(height: 1.75),
-                          ),
-                        ],
-                      ),
-                    ),
-                    SettingRow(
                       icon: Icons.code_rounded,
                       title: '开源仓库',
-                      subtitle: 'github.com/keduoli-lovely/dsm_helper',
+                      subtitle: '查看原版项目与本项目 fork',
                       iconColor: c.isDark ? c.textSecondary : const Color(0xFF24292F),
-                      onTap: () => launchUrl(Uri.parse('https://github.com/keduoli-lovely/dsm_helper'), mode: LaunchMode.externalApplication),
+                      onTap: _showRepos,
                     ),
                   ],
                 ),
@@ -350,8 +309,39 @@ class _SettingsPageState extends State<SettingsPage> {
     );
   }
 
-  void _showPowerSheet() {
-    showAppSheet(
+  void _showRepos() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('开源仓库'),
+        contentPadding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            _RepoOption(
+              title: '原版项目',
+              subtitle: '0ps/dsm_helper · 新拟态风格的原作者版本',
+              onTap: () {
+                Navigator.pop(ctx);
+                launchUrl(Uri.parse('https://github.com/0ps/dsm_helper'), mode: LaunchMode.externalApplication);
+              },
+            ),
+            _RepoOption(
+              title: '本项目 fork',
+              subtitle: 'keduoli-lovely/dsm_helper · 飞牛风格重设计',
+              onTap: () {
+                Navigator.pop(ctx);
+                launchUrl(Uri.parse('https://github.com/keduoli-lovely/dsm_helper'), mode: LaunchMode.externalApplication);
+              },
+            ),
+          ],
+        ),
+        actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭'))],
+      ),
+    );
+  }
+
+  void _showPowerSheet() {    showAppSheet(
       context,
       title: '电源管理',
       subtitle: '请确认设备当前没有正在进行的写入任务',
@@ -396,8 +386,7 @@ class _StatCard extends StatelessWidget {
   }
 }
 
-class _ThemeSelector extends StatelessWidget {
-  final ThemeMode mode;
+class _ThemeSelector extends StatelessWidget {  final ThemeMode mode;
   final ValueChanged<ThemeMode> onChanged;
   const _ThemeSelector({required this.mode, required this.onChanged});
 
@@ -439,6 +428,49 @@ class _ThemeSelector extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+class _RepoOption extends StatelessWidget {
+  final String title;
+  final String subtitle;
+  final VoidCallback onTap;
+  const _RepoOption({required this.title, required this.subtitle, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: Material(
+        color: c.surfaceAlt,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: onTap,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 11),
+            child: Row(
+              children: [
+                Icon(Icons.code_rounded, size: 18, color: c.textSecondary),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(title, style: context.texts.titleSmall?.copyWith(fontSize: 13)),
+                      const SizedBox(height: 2),
+                      Text(subtitle, style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 10.5)),
+                    ],
+                  ),
+                ),
+                Icon(Icons.open_in_new_rounded, size: 16, color: c.textTertiary),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

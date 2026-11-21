@@ -5,6 +5,8 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../dsm/dsm_client.dart';
+
 import '../dsm/models.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
@@ -25,6 +27,7 @@ class _MonitorPageState extends State<MonitorPage> {
   final List<double> _rxHistory = [];
   final List<double> _txHistory = [];
   Utilization? _util;
+  String? _error;
   Timer? _timer;
 
   @override
@@ -49,6 +52,7 @@ class _MonitorPageState extends State<MonitorPage> {
       final util = await service.utilization();
       if (!mounted) return;
       setState(() {
+        _error = null;
         if (_cpuHistory.isEmpty) _seed(util);
         _util = util;
         _append(_cpuHistory, util.cpuPercent);
@@ -56,7 +60,11 @@ class _MonitorPageState extends State<MonitorPage> {
         _append(_rxHistory, util.netRx);
         _append(_txHistory, util.netTx);
       });
-    } catch (_) {}
+    } on DsmException catch (e) {
+      if (mounted) setState(() => _error = e.message);
+    } catch (e) {
+      if (mounted) setState(() => _error = '$e');
+    }
   }
 
   /// 首次进入时铺满一段历史曲线，避免图表一开始是空白。
@@ -94,12 +102,12 @@ class _MonitorPageState extends State<MonitorPage> {
               actions: [
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                  decoration: BoxDecoration(color: c.success.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
+                  decoration: BoxDecoration(color: (_error != null ? c.danger : (_util == null ? c.textTertiary : c.success)).withValues(alpha: 0.12), borderRadius: BorderRadius.circular(10)),
                   child: Row(
                     children: [
-                      Container(width: 6, height: 6, decoration: BoxDecoration(color: c.success, shape: BoxShape.circle)),
+                      Container(width: 6, height: 6, decoration: BoxDecoration(color: _error != null ? c.danger : (_util == null ? c.textTertiary : c.success), shape: BoxShape.circle)),
                       const SizedBox(width: 5),
-                      Text('实时', style: context.texts.labelSmall?.copyWith(color: c.success, fontSize: 11)),
+                      Text(_error != null ? '无法获取' : (_util == null ? '读取中' : '实时'), style: context.texts.labelSmall?.copyWith(color: _error != null ? c.danger : (_util == null ? c.textTertiary : c.success), fontSize: 11)),
                     ],
                   ),
                 ),
@@ -110,6 +118,23 @@ class _MonitorPageState extends State<MonitorPage> {
                 physics: const BouncingScrollPhysics(),
                 padding: const EdgeInsets.fromLTRB(20, 8, 20, 40),
                 children: [
+                  if (_error != null && util == null) ...[
+                    SoftCard(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        children: [
+                          Icon(Icons.signal_wifi_statusbar_null_rounded, size: 28, color: c.textTertiary),
+                          const SizedBox(height: 8),
+                          Text('无法获取资源监控数据', style: context.texts.titleSmall?.copyWith(color: c.textSecondary)),
+                          const SizedBox(height: 4),
+                          Text(_error!, textAlign: TextAlign.center, style: context.texts.labelSmall?.copyWith(color: c.textTertiary)),
+                          const SizedBox(height: 10),
+                          OutlinedButton(onPressed: _sample, child: const Text('重试')),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                  ],
                   SoftCard(
                     padding: const EdgeInsets.fromLTRB(16, 20, 16, 18),
                     child: Column(
@@ -117,7 +142,7 @@ class _MonitorPageState extends State<MonitorPage> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
-                            RingGauge(value: (util?.cpuPercent ?? 0) / 100, label: 'CPU 使用率', size: 118, stroke: 9),
+                            RingGauge(value: (util?.cpuPercent ?? 0) / 100, valueText: util == null ? '—' : null, label: 'CPU 使用率', size: 118, stroke: 9),
                             RingGauge(
                               value: (util?.memPercent ?? 0) / 100,
                               label: '内存',
@@ -133,9 +158,9 @@ class _MonitorPageState extends State<MonitorPage> {
                         const SizedBox(height: 20),
                         Row(
                           children: [
-                            Expanded(child: _SpeedPill(icon: Icons.arrow_downward_rounded, label: '下载', value: formatSpeed(util?.netRx ?? 0), color: c.primary)),
+                            Expanded(child: _SpeedPill(icon: Icons.arrow_downward_rounded, label: '下载', value: util == null ? '—' : formatSpeed(util.netRx), color: c.primary)),
                             const SizedBox(width: 10),
-                            Expanded(child: _SpeedPill(icon: Icons.arrow_upward_rounded, label: '上传', value: formatSpeed(util?.netTx ?? 0), color: const Color(0xFF16C08E))),
+                            Expanded(child: _SpeedPill(icon: Icons.arrow_upward_rounded, label: '上传', value: util == null ? '—' : formatSpeed(util.netTx), color: const Color(0xFF16C08E))),
                           ],
                         ),
                       ],
@@ -222,9 +247,9 @@ class _MonitorPageState extends State<MonitorPage> {
                     padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                     child: Column(
                       children: [
-                        InfoRow(label: '硬盘读取', value: formatSpeed(util?.diskRead ?? 0)),
+                        InfoRow(label: '硬盘读取', value: util == null ? '—' : formatSpeed(util.diskRead)),
                         Divider(height: 1, color: c.border.withValues(alpha: 0.6)),
-                        InfoRow(label: '硬盘写入', value: formatSpeed(util?.diskWrite ?? 0)),
+                        InfoRow(label: '硬盘写入', value: util == null ? '—' : formatSpeed(util.diskWrite)),
                         Divider(height: 1, color: c.border.withValues(alpha: 0.6)),
                         InfoRow(label: '磁盘繁忙', value: '${(util?.diskUtil ?? 0).toStringAsFixed(0)}%'),
                         Divider(height: 1, color: c.border.withValues(alpha: 0.6)),

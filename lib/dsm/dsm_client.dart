@@ -36,13 +36,42 @@ class DsmClient {
     if (!server.https || !server.trustSelfSigned) {
       return http.Client();
     }
-    final ioClient = HttpClient()
+    return IOClient(trustAllHttpClient());
+  }
+
+  /// 供其它服务（例如 Immich、图标加载）复用的宽松 HTTPS 客户端。
+  static HttpClient trustAllHttpClient() {
+    return HttpClient()
       ..badCertificateCallback = ((X509Certificate cert, String host, int port) => true)
       ..connectionTimeout = const Duration(seconds: 8);
-    return IOClient(ioClient);
   }
 
   Uri get _webapi => Uri.parse('${server.baseUrl}/webapi/');
+
+  String get baseUrl => server.baseUrl;
+  String get sessionId => sid;
+
+  /// 给 Image.network 使用的请求头（部分 DSM 图片接口需要会话 Cookie）。
+  Map<String, String> get imageHeaders => {
+        if (cookie.isNotEmpty) 'Cookie': cookie,
+        'Referer': server.baseUrl,
+      };
+
+  Uri rawUri(String script, Map<String, String> params) =>
+      _webapi.replace(path: '${_webapi.path}$script', queryParameters: params);
+
+  /// 测量一次轻量 API 的往返时间。
+  Future<int> ping() async {
+    final stopwatch = Stopwatch()..start();
+    await getRaw('query.cgi', {
+      'api': 'SYNO.API.Info',
+      'version': '1',
+      'method': 'query',
+      'query': 'SYNO.API.Auth',
+    });
+    stopwatch.stop();
+    return stopwatch.elapsedMilliseconds;
+  }
 
   Map<String, String> get _headers => {
         'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',

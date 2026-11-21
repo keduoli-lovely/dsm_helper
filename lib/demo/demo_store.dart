@@ -343,6 +343,13 @@ class DemoStore {
   }
 
   List<DsmUser> users() => [..._users];
+
+  void updateUser(String name, {required String description, required String email}) {
+    final index = _users.indexWhere((u) => u.name == name);
+    if (index < 0) return;
+    final old = _users[index];
+    _users[index] = DsmUser(name: old.name, description: description, group: old.group, disabled: old.disabled, email: email);
+  }
   List<LogEntry> logs() => [..._logs];
   List<ScheduledTask> tasks() => [..._tasks];
 

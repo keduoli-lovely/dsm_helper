@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../dsm/dsm_client.dart';
 import '../dsm/dsm_service.dart';
 import '../dsm/models.dart';
+import '../util/avatar.dart';
 import '../util/http_overrides.dart';
 
 enum BootPhase { booting, needLogin, ready }
@@ -18,6 +19,10 @@ class AppState extends ChangeNotifier {
   static const _kServers = 'servers_v2';
   static const _kThemeMode = 'theme_mode_v2';
   static const _kCurrent = 'current_server_v2';
+  static const _kHomeWidgets = 'home_widgets_v2';
+  static const _kDownloadTools = 'download_tools_v2';
+  static const _kActiveTool = 'active_download_tool_v2';
+  static const _kPhotoSource = 'photo_source_v2';
 
   BootPhase phase = BootPhase.booting;
   ThemeMode themeMode = ThemeMode.light;
@@ -27,8 +32,26 @@ class AppState extends ChangeNotifier {
   SystemInfo? systemInfo;
   StorageSnapshot? storage;
   Utilization? utilization;
+  String? utilizationError;
   String? bootError;
   bool demo = false;
+
+  /// 首页可编辑的卡片顺序。
+  List<HomeWidgetType> homeWidgets = [
+    HomeWidgetType.resource,
+    HomeWidgetType.storage,
+    HomeWidgetType.transfers,
+  ];
+
+  List<DownloadTool> downloadTools = [];
+  String? activeToolId;
+  PhotoSource photoSource = const PhotoSource();
+
+  int? latencyMs;
+  bool? online;
+  String? userEmail;
+  String? avatarUrl;
+  bool _profileLoaded = false;
 
   static Future<AppState> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -57,6 +80,38 @@ class AppState extends ChangeNotifier {
     if (current != null) {
       final matches = servers.where((s) => '${s.host}:${s.port}:${s.account}' == current).toList();
       if (matches.isNotEmpty) server = matches.first;
+    }
+
+    final rawWidgets = _prefs.getStringList(_kHomeWidgets);
+    if (rawWidgets != null && rawWidgets.isNotEmpty) {
+      final parsed = <HomeWidgetType>[];
+      for (final name in rawWidgets) {
+        final match = HomeWidgetType.values.where((e) => e.name == name);
+        if (match.isNotEmpty && !parsed.contains(match.first)) parsed.add(match.first);
+      }
+      if (parsed.isNotEmpty) homeWidgets = parsed;
+    }
+
+    final rawTools = _prefs.getString(_kDownloadTools);
+    if (rawTools != null && rawTools.isNotEmpty) {
+      try {
+        final list = jsonDecode(rawTools) as List;
+        downloadTools = list.whereType<Map>().map((e) => DownloadTool.fromJson(e.cast<String, dynamic>())).toList();
+      } catch (_) {
+        downloadTools = [];
+      }
+    }
+    activeToolId = _prefs.getString(_kActiveTool);
+    if (activeToolId != null && downloadTools.every((t) => t.id != activeToolId)) {
+      activeToolId = null;
+    }
+
+    final rawPhoto = _prefs.getString(_kPhotoSource);
+    if (rawPhoto != null && rawPhoto.isNotEmpty) {
+      try {
+        photoSource = PhotoSource.fromJson((jsonDecode(rawPhoto) as Map).cast<String, dynamic>());
+        _trustPhotoHost();
+      } catch (_) {}
     }
   }
 
@@ -91,6 +146,7 @@ class AppState extends ChangeNotifier {
     service = s;
     server = target;
     await _refreshCore(notify: false);
+    _ensureDsmDownloadTool();
   }
 
   void _handleAuthExpired() {
@@ -102,22 +158,27 @@ class AppState extends ChangeNotifier {
   Future<void> _refreshCore({bool notify = true}) async {
     final s = service;
     if (s == null) return;
-    try {
-      systemInfo = await s.systemInfo();
-    } catch (_) {
-      systemInfo = null;
-    }
-    try {
-      storage = await s.storage();
-    } catch (_) {
-      storage = null;
-    }
+    systemInfo = await _guard(() => s.systemInfo());
+    storage = await _guard(() => s.storage());
     try {
       utilization = await s.utilization();
-    } catch (_) {
+      utilizationError = null;
+    } on DsmException catch (e) {
       utilization = null;
+      utilizationError = e.message;
+    } catch (e) {
+      utilization = null;
+      utilizationError = '$e';
     }
     if (notify) notifyListeners();
+  }
+
+  Future<T?> _guard<T>(Future<T> Function() action) async {
+    try {
+      return await action();
+    } catch (_) {
+      return null;
+    }
   }
 
   Future<void> signIn(
@@ -144,6 +205,11 @@ class AppState extends ChangeNotifier {
     }
     await _prefs.setString(_kServers, jsonEncode(servers.map((e) => e.toJson()).toList()));
     await _prefs.setString(_kCurrent, key);
+    _profileLoaded = false;
+    avatarUrl = null;
+    userEmail = null;
+    await refreshProfile();
+    await measureLatency();
     phase = BootPhase.ready;
     notifyListeners();
   }
@@ -156,7 +222,17 @@ class AppState extends ChangeNotifier {
     systemInfo = null;
     storage = null;
     utilization = null;
+    utilizationError = null;
+    latencyMs = 4;
+    online = true;
+    if (downloadTools.isEmpty) {
+      downloadTools = [
+        DownloadTool(id: 'demo-dsm', type: DownloadToolType.dsm, name: 'Download Station', host: '192.168.1.10', port: '5000'),
+      ];
+      activeToolId = downloadTools.first.id;
+    }
     await _refreshCore(notify: false);
+    await refreshProfile();
     phase = BootPhase.ready;
     notifyListeners();
   }
@@ -181,7 +257,13 @@ class AppState extends ChangeNotifier {
     systemInfo = null;
     storage = null;
     utilization = null;
+    utilizationError = null;
     demo = false;
+    latencyMs = null;
+    online = null;
+    avatarUrl = null;
+    userEmail = null;
+    _profileLoaded = false;
     TrustedHttpOverrides.trustedHost = null;
     phase = BootPhase.needLogin;
     notifyListeners();
@@ -190,24 +272,94 @@ class AppState extends ChangeNotifier {
   Future<void> refreshHome() async {
     final s = service;
     if (s == null) return;
-    try {
-      systemInfo = await s.systemInfo();
-    } catch (_) {}
-    try {
-      storage = await s.storage();
-    } catch (_) {}
+    systemInfo = await _guard(() => s.systemInfo());
+    storage = await _guard(() => s.storage());
     try {
       utilization = await s.utilization();
-    } catch (_) {}
+      utilizationError = null;
+    } on DsmException catch (e) {
+      utilization = null;
+      utilizationError = e.message;
+    } catch (e) {
+      utilization = null;
+      utilizationError = '$e';
+    }
+    await measureLatency(notify: false);
+    if (!_profileLoaded) await refreshProfile(notify: false);
     notifyListeners();
   }
 
   Future<void> refreshUtilization() async {
     final s = service;
     if (s == null) return;
-    utilization = await s.utilization();
+    try {
+      utilization = await s.utilization();
+      utilizationError = null;
+    } on DsmException catch (e) {
+      utilizationError = e.message;
+    } catch (e) {
+      utilizationError = '$e';
+    }
     notifyListeners();
   }
+
+  Future<void> measureLatency({bool notify = true}) async {
+    final s = service;
+    if (s == null) return;
+    try {
+      latencyMs = await s.ping();
+      online = true;
+    } catch (_) {
+      online = false;
+      latencyMs = null;
+    }
+    if (notify) notifyListeners();
+  }
+
+  Future<void> refreshProfile({bool notify = true}) async {
+    final s = service;
+    final account = server?.account;
+    if (s == null || account == null || account.isEmpty) return;
+    try {
+      final profile = await s.userProfile(account);
+      _profileLoaded = true;
+      userEmail = profile['email']?.toString();
+      final candidate = _extractAvatar(profile);
+      avatarUrl = candidate ?? gravatarUrl(userEmail);
+    } catch (_) {
+      _profileLoaded = true;
+      avatarUrl = gravatarUrl(userEmail);
+    }
+    if (notify) notifyListeners();
+  }
+
+  String? _extractAvatar(Map<String, dynamic> profile) {
+    for (final key in ['avatar', 'photo', 'profile_photo', 'avatar_url']) {
+      final url = _absolute(profile[key]);
+      if (url != null) return url;
+    }
+    final additional = profile['additional'];
+    if (additional is Map) {
+      for (final key in ['avatar', 'photo', 'profile_photo']) {
+        final url = _absolute(additional[key]);
+        if (url != null) return url;
+      }
+    }
+    return null;
+  }
+
+  String? _absolute(dynamic value) {
+    if (value is! String || value.isEmpty) return null;
+    if (value.startsWith('http://') || value.startsWith('https://')) return value;
+    if (value.startsWith('/') && server != null) {
+      return '${server!.https ? 'https' : 'http'}://${server!.host}:${server!.port}$value';
+    }
+    return null;
+  }
+
+  Map<String, String> get imageHeaders => service?.imageHeaders ?? const {};
+
+  Map<String, String> get avatarHeaders => imageHeaders;
 
   Future<void> setThemeMode(ThemeMode mode) async {
     themeMode = mode;
@@ -227,8 +379,110 @@ class AppState extends ChangeNotifier {
     notifyListeners();
   }
 
+  // ---------- 首页组件 ----------
+
+  Future<void> setHomeWidgets(List<HomeWidgetType> widgets) async {
+    homeWidgets = List.unmodifiable(widgets);
+    await _prefs.setStringList(_kHomeWidgets, homeWidgets.map((e) => e.name).toList());
+    notifyListeners();
+  }
+
+  Future<void> toggleHomeWidget(HomeWidgetType type, bool enabled) async {
+    final next = [...homeWidgets];
+    if (enabled && !next.contains(type)) {
+      next.add(type);
+    } else if (!enabled) {
+      next.remove(type);
+    }
+    await setHomeWidgets(next);
+  }
+
+  // ---------- 下载工具 ----------
+
+  void _ensureDsmDownloadTool() {
+    final target = server;
+    if (target == null) return;
+    final exists = downloadTools.any((t) => t.type == DownloadToolType.dsm && t.host == target.host);
+    if (exists) return;
+    final tool = DownloadTool(
+      id: 'dsm-${target.host}-${target.port}',
+      type: DownloadToolType.dsm,
+      name: 'Download Station',
+      host: target.host,
+      port: target.port,
+      https: target.https,
+    );
+    downloadTools = [tool, ...downloadTools];
+    activeToolId ??= tool.id;
+    _saveTools();
+  }
+
+  Future<void> addDownloadTool(DownloadTool tool) async {
+    final index = downloadTools.indexWhere((t) => t.id == tool.id);
+    if (index >= 0) {
+      downloadTools[index] = tool;
+    } else {
+      downloadTools = [...downloadTools, tool];
+    }
+    activeToolId ??= tool.id;
+    await _saveTools();
+    notifyListeners();
+  }
+
+  Future<void> removeDownloadTool(String id) async {
+    downloadTools = downloadTools.where((t) => t.id != id).toList();
+    if (activeToolId == id) activeToolId = downloadTools.isEmpty ? null : downloadTools.first.id;
+    await _saveTools();
+    notifyListeners();
+  }
+
+  Future<void> setActiveTool(String id) async {
+    activeToolId = id;
+    await _prefs.setString(_kActiveTool, id);
+    notifyListeners();
+  }
+
+  DownloadTool? get activeTool {
+    if (downloadTools.isEmpty) return null;
+    final id = activeToolId;
+    if (id == null) return downloadTools.first;
+    final matches = downloadTools.where((t) => t.id == id).toList();
+    return matches.isEmpty ? downloadTools.first : matches.first;
+  }
+
+  Future<void> _saveTools() async {
+    await _prefs.setString(_kDownloadTools, jsonEncode(downloadTools.map((e) => e.toJson()).toList()));
+    if (activeToolId != null) await _prefs.setString(_kActiveTool, activeToolId!);
+  }
+
+  // ---------- 相册数据源 ----------
+
+  Future<void> setPhotoSource(PhotoSource source) async {
+    photoSource = source;
+    await _prefs.setString(_kPhotoSource, jsonEncode(source.toJson()));
+    _trustPhotoHost();
+    notifyListeners();
+  }
+
+  void _trustPhotoHost() {
+    if (photoSource.type != PhotoSourceType.immich || photoSource.immichUrl.isEmpty) return;
+    final uri = Uri.tryParse(photoSource.immichUrl);
+    if (uri != null && uri.host.isNotEmpty && photoSource.trustSelfSigned) {
+      TrustedHttpOverrides.extraTrustedHosts.add(uri.host);
+    }
+  }
+
   String get accountInitial {
     final account = server?.account ?? '?';
     return account.isEmpty ? '?' : account.substring(0, 1).toUpperCase();
+  }
+
+  /// 首页标题：优先设备名，其次用户备注，最后账号。
+  String get deviceTitle {
+    final hostname = systemInfo?.hostname ?? '';
+    if (hostname.isNotEmpty) return hostname;
+    final note = server?.note ?? '';
+    if (note.isNotEmpty) return note;
+    return server?.account ?? '群晖设备';
   }
 }

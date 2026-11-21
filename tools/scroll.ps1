@@ -6,7 +6,7 @@ param(
 Add-Type @"
 using System;
 using System.Runtime.InteropServices;
-public class WinScroll2 {
+public class WinScroll4 {
   [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr hWnd, out RECT rect);
   [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr hWnd, ref POINT point);
   [DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
@@ -20,15 +20,16 @@ public class WinScroll2 {
 $proc = Get-Process -Name $ProcessName -ErrorAction SilentlyContinue | Where-Object { $_.MainWindowHandle -ne 0 } | Select-Object -First 1
 if (-not $proc) { Write-Output "WINDOW_NOT_FOUND"; exit 1 }
 $h = $proc.MainWindowHandle
-[WinScroll2]::SetForegroundWindow($h) | Out-Null
+[WinScroll4]::SetForegroundWindow($h) | Out-Null
 Start-Sleep -Milliseconds 250
-$client = New-Object WinScroll2+RECT
-[WinScroll2]::GetClientRect($h, [ref]$client) | Out-Null
-$origin = New-Object WinScroll2+POINT
-[WinScroll2]::ClientToScreen($h, [ref]$origin) | Out-Null
+$client = New-Object WinScroll4+RECT
+[WinScroll4]::GetClientRect($h, [ref]$client) | Out-Null
+$origin = New-Object WinScroll4+POINT
+[WinScroll4]::ClientToScreen($h, [ref]$origin) | Out-Null
 $cx = $origin.X + [int](($client.Right - $client.Left) / 2)
 $cy = $origin.Y + [int](($client.Bottom - $client.Top) / 2)
-[WinScroll2]::SetCursorPos($cx, $cy) | Out-Null
+[WinScroll4]::SetCursorPos($cx, $cy) | Out-Null
 Start-Sleep -Milliseconds 100
-[WinScroll2]::mouse_event(0x0800, 0, 0, [uint32]([int64]4294967296 + $Delta), [UIntPtr]::Zero)
+$wheel = if ($Delta -lt 0) { [int64]4294967296 + $Delta } else { [int64]$Delta }
+[WinScroll4]::mouse_event(0x0800, 0, 0, [uint32]$wheel, [UIntPtr]::Zero)
 Write-Output "SCROLLED $Delta"
