@@ -194,8 +194,15 @@ class _FilesPageState extends State<FilesPage> {
                   Entrance(
                     index: 0,
                     child: Row(
-                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
+                        Expanded(
+                          child: Text(
+                            storage == null ? '浏览你的私有云文件' : '已用  · 共 ',
+                            style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 11.5),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
                         if (_refreshing)
                           const SizedBox(width: 34, height: 34, child: Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator(strokeWidth: 2.2)))
                         else

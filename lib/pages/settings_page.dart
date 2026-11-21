@@ -113,8 +113,21 @@ class _SettingsPageState extends State<SettingsPage> {
               index: 0,
               child: Row(
                 children: [
-                  Text('我的', style: context.texts.displayMedium),
-                  const Spacer(),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('我的', style: context.texts.titleMedium?.copyWith(fontSize: 20)),
+                        const SizedBox(height: 2),
+                        Text(
+                          state.server?.baseUrl ?? '未连接设备',
+                          style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 11.5),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ],
+                    ),
+                  ),
                   IconButton(
                     onPressed: _openWeb,
                     icon: Icon(Icons.open_in_new_rounded, color: c.textSecondary, size: 20),
@@ -276,6 +289,7 @@ class _SettingsPageState extends State<SettingsPage> {
                             selected: state.accentColor.toARGB32() == preset.value.toARGB32(),
                             onTap: () => state.setAccentColor(preset.value),
                           ),
+                        _CustomColorDot(onTap: () => _showCustomColor(state)),
                       ],
                     ),
                   ],
@@ -365,6 +379,54 @@ class _SettingsPageState extends State<SettingsPage> {
     if (!mounted) return;
     await context.read<AppState>().setCustomAvatar(target.path);
     if (mounted) showToast(context, '头像已更新');
+  }
+
+  Future<void> _showCustomColor(AppState state) async {
+    var hsv = HSVColor.fromColor(state.accentColor);
+    final selected = await showDialog<Color>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          final color = hsv.toColor();
+          return AlertDialog(
+            title: const Text('自定义主题颜色'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  height: 54,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(16),
+                    border: Border.all(color: context.colors.border),
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Text('#', style: context.texts.labelSmall),
+                const SizedBox(height: 8),
+                Text('色相', style: context.texts.labelSmall),
+                Slider(
+                  value: hsv.hue,
+                  min: 0,
+                  max: 360,
+                  divisions: 360,
+                  onChanged: (v) => setDialogState(() => hsv = hsv.withHue(v)),
+                ),
+                Text('饱和度', style: context.texts.labelSmall),
+                Slider(value: hsv.saturation, onChanged: (v) => setDialogState(() => hsv = hsv.withSaturation(v))),
+                Text('亮度', style: context.texts.labelSmall),
+                Slider(value: hsv.value, min: 0.05, onChanged: (v) => setDialogState(() => hsv = hsv.withValue(v))),
+              ],
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('取消')),
+              FilledButton(onPressed: () => Navigator.pop(ctx, color), child: const Text('使用')),
+            ],
+          );
+        },
+      ),
+    );
+    if (selected != null) await state.setAccentColor(selected);
   }
 
   void _showRepos() {
@@ -570,6 +632,37 @@ class _AccentDot extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(label, style: context.texts.labelSmall?.copyWith(color: selected ? c.textPrimary : c.textTertiary, fontSize: 10)),
+        ],
+      ),
+    );
+  }
+}
+class _CustomColorDot extends StatelessWidget {
+  final VoidCallback onTap;
+  const _CustomColorDot({required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              gradient: const SweepGradient(colors: [Colors.red, Colors.orange, Colors.yellow, Colors.green, Colors.cyan, Colors.blue, Colors.purple, Colors.red]),
+              shape: BoxShape.circle,
+              border: Border.all(color: c.surface, width: 1.5),
+              boxShadow: [BoxShadow(color: c.textTertiary.withValues(alpha: 0.25), blurRadius: 8, offset: const Offset(0, 3))],
+            ),
+            child: const Icon(Icons.colorize_rounded, size: 16, color: Colors.white),
+          ),
+          const SizedBox(height: 4),
+          Text('自定义', style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 10)),
         ],
       ),
     );

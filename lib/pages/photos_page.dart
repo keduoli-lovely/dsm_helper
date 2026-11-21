@@ -1,12 +1,14 @@
 import 'dart:io';
 
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
@@ -50,15 +52,52 @@ class _PhotosPageState extends State<PhotosPage> {
   @override
   void initState() {
     super.initState();
-    final source = context.read<AppState>().photoSource;
-    final cached = _cache[_cacheKey(source)];
-    if (cached != null) {
-      _items.addAll(cached.items);
-      _hasMore = cached.hasMore;
-      _loading = false;
-    }
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load(reset: true, background: cached != null));
+    WidgetsBinding.instance.addPostFrameCallback((_) async {
+      await _restoreCache();
+      if (!mounted) return;
+      if (_items.isEmpty) {
+        await _load(reset: true);
+      } else {
+        setState(() => _loading = false);
+      }
+    });
     _scroll.addListener(_onScroll);
+  }
+
+  Future<void> _restoreCache() async {
+    final source = context.read<AppState>().photoSource;
+    if (!source.configured) return;
+    final key = _cacheKey(source);
+    final memory = _cache[key];
+    if (memory != null && memory.items.isNotEmpty) {
+      _items.addAll(memory.items);
+      _hasMore = memory.hasMore;
+      _loading = false;
+      return;
+    }
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString('photo_index_v1_');
+      if (raw == null || raw.isEmpty) return;
+      final list = jsonDecode(raw) as List;
+      final items = list.whereType<Map>().map((e) => PhotoItem.fromJson(e.cast<String, dynamic>())).toList();
+      if (items.isEmpty || !mounted) return;
+      setState(() {
+        _items.addAll(items);
+        _loading = false;
+        _hasMore = false;
+      });
+      _cache[key] = _PhotoCache(List.unmodifiable(items), false, DateTime.now());
+    } catch (_) {}
+  }
+
+  Future<void> _saveCache(PhotoSource source) async {
+    final key = _cacheKey(source);
+    _cache[key] = _PhotoCache(List.unmodifiable(_items.take(5000).toList()), false, DateTime.now());
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setString('photo_index_v1_', jsonEncode(_items.take(5000).map((e) => e.toJson()).toList()));
+    } catch (_) {}
   }
 
   String _cacheKey(PhotoSource source) => switch (source.type) {
@@ -134,7 +173,7 @@ class _PhotosPageState extends State<PhotosPage> {
         _error = null;
       });
       if (fetched.isNotEmpty) _page++;
-      _cache[_cacheKey(source)] = _PhotoCache(List.unmodifiable(_items.take(500).toList()), _hasMore, DateTime.now());
+      _saveCache(source);
     } on DsmException catch (e) {
       if (!mounted) return;
       if (background) {
@@ -209,7 +248,7 @@ class _PhotosPageState extends State<PhotosPage> {
           _refreshing = false;
           _hasMore = false;
         });
-        _cache[_cacheKey(source)] = _PhotoCache(List.unmodifiable(_items.take(500).toList()), false, DateTime.now());
+        _saveCache(source);
       },
     );
   }
@@ -259,7 +298,7 @@ class _PhotosPageState extends State<PhotosPage> {
         }
         _items.sort((a, b) => (b.takenAt ?? DateTime(0)).compareTo(a.takenAt ?? DateTime(0)));
       });
-      _cache[_cacheKey(source)] = _PhotoCache(List.unmodifiable(_items.take(500).toList()), _hasMore, DateTime.now());
+      _saveCache(source);
     } catch (_) {} finally {
       if (mounted) setState(() => _refreshing = false);
     }

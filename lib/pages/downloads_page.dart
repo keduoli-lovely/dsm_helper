@@ -399,6 +399,13 @@ class _DownloadsPageState extends State<DownloadsPage> {
     final c = context.colors;
     final visible = _visible;
     final noTools = state.downloadTools.isEmpty;
+    final activeCount = _tasks.where((t) => t.isActive).length;
+    final speed = _tasks.where((t) => t.isActive).fold<double>(0, (sum, t) => sum + t.speedDownload);
+    final subtitle = noTools
+        ? '未配置下载工具'
+        : _tasks.isEmpty
+            ? '没有下载任务'
+            : '当前下载任务  · ';
 
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -415,7 +422,12 @@ class _DownloadsPageState extends State<DownloadsPage> {
                           index: 0,
                           child: Row(
                             children: [
-                              const Spacer(),
+                              Expanded(
+                                child: Text(
+                                  subtitle,
+                                  style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 11.5),
+                                ),
+                              ),
                               _refreshing
                                   ? const SizedBox(width: 38, height: 38, child: Padding(padding: EdgeInsets.all(9), child: CircularProgressIndicator(strokeWidth: 2.2)))
                                   : CircleIconButton(icon: Icons.refresh_rounded, onTap: _refresh, size: 18),
@@ -550,7 +562,8 @@ class _DownloadsPageState extends State<DownloadsPage> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 132),
       children: [
-        const SizedBox(height: 50),
+        Text('未配置下载工具', style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 11.5)),
+        const SizedBox(height: 30),
         Center(
           child: Column(
             children: [

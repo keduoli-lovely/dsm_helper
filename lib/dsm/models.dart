@@ -883,6 +883,30 @@ class PhotoItem {
     this.originalUrl = '',
     this.headers = const {},
   });
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'takenAt': takenAt?.millisecondsSinceEpoch,
+        'createdAt': createdAt?.millisecondsSinceEpoch,
+        'size': size,
+        'path': path,
+        'thumbUrl': thumbUrl,
+        'originalUrl': originalUrl,
+        'headers': headers,
+      };
+
+  factory PhotoItem.fromJson(Map<String, dynamic> d) => PhotoItem(
+        id: _asString(d['id']),
+        name: _asString(d['name']),
+        takenAt: d['takenAt'] is num ? DateTime.fromMillisecondsSinceEpoch((d['takenAt'] as num).toInt()) : null,
+        createdAt: d['createdAt'] is num ? DateTime.fromMillisecondsSinceEpoch((d['createdAt'] as num).toInt()) : null,
+        size: (d['size'] as num?)?.toInt() ?? 0,
+        path: _asString(d['path']),
+        thumbUrl: _asString(d['thumbUrl']),
+        originalUrl: _asString(d['originalUrl']),
+        headers: (d['headers'] as Map?)?.map((k, v) => MapEntry('$k', '$v')) ?? const {},
+      );
 }
 
 /// 首页可自由开关的卡片。
