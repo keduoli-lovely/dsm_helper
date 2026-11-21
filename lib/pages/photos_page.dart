@@ -947,7 +947,13 @@ class _PhotoViewerPageState extends State<_PhotoViewerPage> {
               },
               itemBuilder: (context, index) {
                 final photo = widget.items[index];
-                final url = photo.originalUrl.isNotEmpty ? photo.originalUrl : photo.thumbUrl;
+                final service = context.read<AppState>().service;
+                var url = photo.originalUrl.isNotEmpty ? photo.originalUrl : photo.thumbUrl;
+                if (photo.path.isNotEmpty && service != null) {
+                  final large = service.thumbnailUri(photo.path, size: 'large');
+                  if (large != null) url = large.toString();
+                }
+                final cacheWidth = 1400;
                 return GestureDetector(
                   onTap: () => setState(() => _chrome = !_chrome),
                   child: url.isEmpty
@@ -957,6 +963,7 @@ class _PhotoViewerPageState extends State<_PhotoViewerPage> {
                             url,
                             headers: photo.headers,
                             fit: BoxFit.contain,
+                            cacheWidth: cacheWidth,
                             loadingBuilder: (context, child, progress) {
                               if (progress == null) return child;
                               return Center(child: CircularProgressIndicator(strokeWidth: 2.2, color: c.textTertiary));

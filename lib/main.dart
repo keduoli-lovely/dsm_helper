@@ -14,6 +14,7 @@ import 'widgets/ui_kit.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   HttpOverrides.global = TrustedHttpOverrides();
+  PaintingBinding.instance.imageCache.maximumSizeBytes = 256 * 1024 * 1024;
   final state = await AppState.load();
   runApp(ChangeNotifierProvider.value(value: state, child: const DsmHelperApp()));
 }
