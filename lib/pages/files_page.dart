@@ -209,11 +209,11 @@ class _FilesPageState extends State<FilesPage> {
       } catch (e) {
         failed++;
         failedNames.add(file.name);
-        if (firstError.isEmpty) firstError = '';
+        if (firstError.isEmpty) firstError = '$e';
       }
     }
     if (failed > 0) {
-      status.value = '上传失败：';
+      status.value = '上传失败：$firstError';
     }
     final elapsed = DateTime.now().difference(started);
     if (elapsed < const Duration(milliseconds: 700)) {
@@ -228,10 +228,16 @@ class _FilesPageState extends State<FilesPage> {
     if (failed == 0) {
       showToast(context, '已上传 $success 个文件到「${target.name}」');
     } else {
-      showToast(
-        context,
-        '成功 $success 个，失败 $failed 个${failedNames.isEmpty ? '' : '：${failedNames.first}${failedNames.length > 1 ? ' 等' : ''}'}',
-        icon: Icons.error_outline_rounded,
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('上传失败'),
+          content: SelectableText(
+            '目标：${target.path}\n文件：${failedNames.join('、')}\n\n错误：$firstError',
+            style: context.texts.bodySmall,
+          ),
+          actions: [TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('关闭'))],
+        ),
       );
     }
     if (success > 0) await _load(silent: true);
