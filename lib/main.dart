@@ -41,6 +41,25 @@ class DsmHelperApp extends StatelessWidget {
         GlobalCupertinoLocalizations.delegate,
       ],
       home: const RootPage(),
+      builder: (context, child) {
+        final bottom = MediaQuery.of(context).padding.bottom;
+        return Stack(
+          children: [if (child != null) child,
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              height: bottom > 0 ? bottom : 4,
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                onVerticalDragStart: (_) {},
+                onVerticalDragUpdate: (_) {},
+                child: const SizedBox.expand(),
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

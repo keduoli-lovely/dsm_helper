@@ -258,6 +258,15 @@ class DsmClient {
       'overwrite': 'true',
     });
     final request = http.MultipartRequest('POST', uri)..headers.addAll(_headers);
+    request.fields.addAll({
+      'api': 'SYNO.FileStation.Upload',
+      'method': 'upload',
+      'version': '2',
+      if (sid.isNotEmpty) '_sid': sid,
+      'path': destDir,
+      'create_parents': 'true',
+      'overwrite': 'true',
+    });
     var sent = 0;
     final tracked = stream.map((chunk) {
       sent += chunk.length;

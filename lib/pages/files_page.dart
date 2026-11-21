@@ -185,8 +185,11 @@ class _FilesPageState extends State<FilesPage> {
         );
       },
     );
+    final started = DateTime.now();
+    await Future<void>.delayed(const Duration(milliseconds: 100));
     var success = 0;
     var failed = 0;
+    var firstError = '';
     final failedNames = <String>[];
     for (var i = 0; i < files.length; i++) {
       final file = files[i];
@@ -206,7 +209,15 @@ class _FilesPageState extends State<FilesPage> {
       } catch (e) {
         failed++;
         failedNames.add(file.name);
+        if (firstError.isEmpty) firstError = '';
       }
+    }
+    if (failed > 0) {
+      status.value = '上传失败：';
+    }
+    final elapsed = DateTime.now().difference(started);
+    if (elapsed < const Duration(milliseconds: 700)) {
+      await Future<void>.delayed(const Duration(milliseconds: 700) - elapsed);
     }
     if (dialogContext != null && Navigator.of(dialogContext!).canPop()) {
       Navigator.of(dialogContext!).pop();
