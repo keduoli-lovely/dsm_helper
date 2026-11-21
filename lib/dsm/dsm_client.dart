@@ -97,7 +97,7 @@ class DsmClient {
       'version': '6',
       'api': 'SYNO.API.Auth',
       'method': 'login',
-      'session': 'webui',
+      'session': 'FileStation',
       'format': 'sid',
       'enable_device_token': rememberDevice ? 'yes' : 'no',
       'enable_syno_token': 'yes',
@@ -117,7 +117,7 @@ class DsmClient {
         'api': 'SYNO.API.Auth',
         'version': '4',
         'method': 'logout',
-        'session': 'webui',
+        'session': 'FileStation',
         '_sid': sid,
       });
     } catch (_) {}
@@ -282,7 +282,7 @@ class DsmClient {
         final code = ((json is Map ? json['error'] : null) as Map?)?['code'];
         final numeric = (code as num?)?.toInt() ?? -5;
         final message = switch (numeric) {
-          401 => '上传失败（401）：目标目录不可写、没有权限，或会话缺少 synotoken；请退出重新登录后再试',
+          401 => '上传失败（401）：目标目录不可写或没有权限；会话 token=${synoToken.length}, sid=${sid.length}。若 token=0 请重新登录',
           402 => '上传失败：文件名无效或目标已存在（402）',
           403 => '上传失败：目标目录不存在或无法创建（403）',
           _ => '上传失败（${code ?? '未知错误'}）',
