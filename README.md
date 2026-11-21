@@ -20,9 +20,9 @@
 | --- | --- | --- |
 | ![我的](docs/screenshots/settings.png) | ![登录](docs/screenshots/login.png) | ![监控](docs/screenshots/monitor.png) |
 
-| 共享链接设置 | 文件浏览 |
-| --- | --- |
-| ![共享](docs/screenshots/share.png) | ![浏览](docs/screenshots/browser.png) |
+| 文件浏览 |
+| --- |
+| ![浏览](docs/screenshots/browser.png) |
 
 ## 功能
 
