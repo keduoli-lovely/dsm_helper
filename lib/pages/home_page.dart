@@ -821,7 +821,7 @@ class _ResourceCard extends StatelessWidget {
                   size: 92,
                   stroke: 7.5,
                   valueText: memGb,
-                  subText: memGb == '—' ? null : 'GB',
+                  subText: memGb == '—' ? null : 'GB · ${util!.memPercent.toStringAsFixed(0)}%',
                   color: const Color(0xFF6C8BFF),
                   endColor: const Color(0xFF8FA5FF),
                 ),

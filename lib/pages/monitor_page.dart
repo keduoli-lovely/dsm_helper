@@ -149,7 +149,7 @@ class _MonitorPageState extends State<MonitorPage> {
                               size: 118,
                               stroke: 9,
                               valueText: memGb,
-                              subText: memGb == '—' ? null : 'GB',
+                              subText: memGb == '—' ? null : 'GB · ${util!.memPercent.toStringAsFixed(0)}%',
                               color: const Color(0xFF6C8BFF),
                               endColor: const Color(0xFF9BB0FF),
                             ),

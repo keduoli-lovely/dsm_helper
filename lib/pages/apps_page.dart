@@ -30,12 +30,14 @@ class _AppsPageState extends State<AppsPage> {
   bool _library = false;
   List<CatalogPackage> _catalog = [];
   List<PackageVolume> _volumes = [];
+  int _libraryFilter = 0;
   bool _catalogLoading = false;
   String? _catalogError;
 
   @override
   void initState() {
     super.initState();
+    _catalog = context.read<AppState>().catalogCache;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _load();
       _loadCatalog();
@@ -83,38 +85,58 @@ class _AppsPageState extends State<AppsPage> {
   }
 
   Future<void> _loadCatalog() async {
-    final service = context.read<AppState>().service;
+    final state = context.read<AppState>();
+    final service = state.service;
     if (service == null) return;
-    setState(() {
-      _catalogLoading = true;
-      _catalogError = null;
-    });
-    try {
-      final results = await Future.wait([
-        service.catalogPackages(),
-        service.packageVolumes(),
-      ]);
+    if (_catalog.isEmpty) {
+      setState(() => _catalogLoading = true);
+    }
+    setState(() => _catalogError = null);
+
+    List<CatalogPackage>? loaded;
+    String? lastError;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      try {
+        loaded = await service.catalogPackages();
+        break;
+      } on DsmException catch (e) {
+        lastError = e.message;
+      } catch (e) {
+        lastError = '$e';
+      }
+      await Future.delayed(const Duration(milliseconds: 450));
+    }
+    if (!mounted) return;
+    if (loaded != null && loaded.isNotEmpty) {
+      await state.saveCatalogCache(loaded);
       if (!mounted) return;
       setState(() {
-        _catalog = results[0] as List<CatalogPackage>;
-        _volumes = results[1] as List<PackageVolume>;
+        _catalog = loaded!;
         _catalogLoading = false;
+        _catalogError = null;
       });
-    } on DsmException catch (e) {
-      if (!mounted) return;
+    } else {
+      final cached = state.catalogCache;
       setState(() {
-        _catalogError = e.message;
+        if (cached.isNotEmpty) _catalog = cached;
         _catalogLoading = false;
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        _catalogError = '';
-        _catalogLoading = false;
+        _catalogError = cached.isEmpty ? _friendlyCatalogError(lastError) : null;
       });
     }
+    // 存储空间单独加载，失败不影响套件库显示。
+    try {
+      final volumes = await service.packageVolumes();
+      if (mounted) setState(() => _volumes = volumes);
+    } catch (_) {}
   }
 
+  String _friendlyCatalogError(String? message) {
+    if (message == null || message.isEmpty) return '无法读取套件库，请稍后重试';
+    if (message.toLowerCase().contains('network') || message.contains('无法连接')) {
+      return '网络不可达，请检查 Wi-Fi / 穿透后重试';
+    }
+    return message;
+  }
   bool _matches(DsmPackage pkg) {
     if (_filter == 1 && !pkg.isRunning) return false;
     if (_filter == 2 && pkg.isRunning) return false;
@@ -205,12 +227,12 @@ class _AppsPageState extends State<AppsPage> {
                       selected: _library,
                       onTap: () {
                         setState(() => _library = true);
-                        if (_catalog.isEmpty && !_catalogLoading) _loadCatalog();
+                        if (_catalog.isEmpty || _catalogError != null) _loadCatalog();
                       },
                     ),
                     const Spacer(),
                     if (_library)
-                      Text('${_catalog.length} 个套件', style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 10.5)),
+                      Text('${_catalog.length} 个套件${_updateCount > 0 ? ' · $_updateCount 可更新' : ''}', style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 10.5)),
                   ],
                 ),
               ),
@@ -224,6 +246,22 @@ class _AppsPageState extends State<AppsPage> {
                     const SizedBox(width: 8),
                     _FilterPill(label: '已停止', selected: _filter == 2, onTap: () => setState(() => _filter = 2)),
                   ],
+                ),
+              ] else ...[
+                const SizedBox(height: 10),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: [
+                      _FilterPill(label: '全部', selected: _libraryFilter == 0, onTap: () => setState(() => _libraryFilter = 0)),
+                      const SizedBox(width: 8),
+                      _FilterPill(label: '官方', selected: _libraryFilter == 1, onTap: () => setState(() => _libraryFilter = 1)),
+                      const SizedBox(width: 8),
+                      _FilterPill(label: '社区', selected: _libraryFilter == 2, onTap: () => setState(() => _libraryFilter = 2)),
+                      const SizedBox(width: 8),
+                      _FilterPill(label: '可更新', selected: _libraryFilter == 3, onTap: () => setState(() => _libraryFilter = 3)),
+                    ],
+                  ),
                 ),
               ],
               const SizedBox(height: 16),
@@ -281,17 +319,31 @@ class _AppsPageState extends State<AppsPage> {
     return false;
   }
 
+  bool _canUpdateItem(CatalogPackage item) {
+    DsmPackage? pkg;
+    for (final candidate in _packages) {
+      if (candidate.id.toLowerCase() == item.id.toLowerCase()) {
+        pkg = candidate;
+        break;
+      }
+    }
+    return pkg != null && item.version.isNotEmpty && _versionGreater(item.version, pkg.version);
+  }
+
+  int get _updateCount => _catalog.where(_canUpdateItem).length;
+
   List<Widget> _catalogWidgets(AppState state) {
     final installed = {for (final p in _packages) p.id.toLowerCase(): p};
     final items = _catalog.where((item) {
-      if (_query.isEmpty) return true;
-      final q = _query.toLowerCase();
-      return item.name.toLowerCase().contains(q) || item.id.toLowerCase().contains(q);
+      final query = _query.trim().toLowerCase();
+      if (query.isNotEmpty && !item.name.toLowerCase().contains(query) && !item.id.toLowerCase().contains(query)) return false;
+      final official = item.source == 'syno';
+      if (_libraryFilter == 1 && !official) return false;
+      if (_libraryFilter == 2 && official) return false;
+      if (_libraryFilter == 3 && !_canUpdateItem(item)) return false;
+      return true;
     }).toList();
-    bool canUpdate(CatalogPackage item) {
-      final pkg = installed[item.id.toLowerCase()];
-      return pkg != null && item.version.isNotEmpty && _versionGreater(item.version, pkg.version);
-    }
+    bool canUpdate(CatalogPackage item) => _canUpdateItem(item);
 
     items.sort((a, b) {
       final au = canUpdate(a) ? 0 : (installed.containsKey(a.id.toLowerCase()) ? 2 : 1);
@@ -321,12 +373,14 @@ class _AppsPageState extends State<AppsPage> {
       child: Row(
         children: [
           _PackageIcon(
-            urls: item.iconUrl.isNotEmpty ? [item.iconUrl] : (state.service?.packageIconUrls(item.id) ?? const []),
-            headers: item.iconUrl.isNotEmpty ? const {} : state.imageHeaders,
+            urls: [if (item.iconUrl.isNotEmpty) item.iconUrl, ...(state.service?.packageIconUrls(item.id) ?? const [])],
+            headers: state.imageHeaders,
             size: 46,
             radius: 14,
             fallbackIcon: style.icon,
             colors: style.colors,
+            localPrefix: state.server?.baseUrl,
+            label: item.name,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -337,9 +391,19 @@ class _AppsPageState extends State<AppsPage> {
                 const SizedBox(height: 2),
                 Text(item.description.isEmpty ? item.id : item.description, style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 10.5), maxLines: 1, overflow: TextOverflow.ellipsis),
                 const SizedBox(height: 3),
-                Text(
-                  installed == null ? 'v${item.version}' : '已安装 ${installed.version}${canUpdate ? ' → ${item.version}' : ''}',
-                  style: context.texts.labelSmall?.copyWith(color: canUpdate ? c.primary : c.textTertiary, fontSize: 10.5),
+                Row(
+                  children: [
+                    _SourceBadge(official: item.source == 'syno'),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        installed == null ? 'v${item.version}' : '已安装 ${installed.version}${canUpdate ? ' → ${item.version}' : ''}',
+                        style: context.texts.labelSmall?.copyWith(color: canUpdate ? c.primary : c.textTertiary, fontSize: 10.5),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -368,12 +432,14 @@ class _AppsPageState extends State<AppsPage> {
         Row(
           children: [
             _PackageIcon(
-              urls: state.service?.packageIconUrls(item.id) ?? const [],
+              urls: [if (item.iconUrl.isNotEmpty) item.iconUrl, ...(state.service?.packageIconUrls(item.id) ?? const [])],
               headers: state.imageHeaders,
               size: 58,
               radius: 18,
               fallbackIcon: style.icon,
               colors: style.colors,
+              localPrefix: state.server?.baseUrl,
+              label: item.name,
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -553,8 +619,9 @@ class _AppsPageState extends State<AppsPage> {
           padding: const EdgeInsets.only(bottom: 10),
           child: _PackageCard(
             package: pkg,
-            iconUrls: catalogIcons[pkg.id.toLowerCase()] != null ? [catalogIcons[pkg.id.toLowerCase()]!] : (state.service?.packageIconUrls(pkg.id) ?? const []),
-            headers: catalogIcons[pkg.id.toLowerCase()] != null ? const {} : state.imageHeaders,
+            iconUrls: [if (catalogIcons[pkg.id.toLowerCase()] != null) catalogIcons[pkg.id.toLowerCase()]!, ...(state.service?.packageIconUrls(pkg.id) ?? const [])],
+            headers: state.imageHeaders,
+            localPrefix: state.server?.baseUrl,
             busy: _busy.contains(pkg.id),
             onToggle: (v) => _toggle(pkg, v),
             onTap: () => _showDetail(pkg, state),
@@ -574,12 +641,14 @@ class _AppsPageState extends State<AppsPage> {
         Row(
           children: [
             _PackageIcon(
-              urls: state.service?.packageIconUrls(pkg.id) ?? const [],
+              urls: [if (_catalogIconById[pkg.id.toLowerCase()] != null) _catalogIconById[pkg.id.toLowerCase()]!, ...(state.service?.packageIconUrls(pkg.id) ?? const [])],
               headers: state.imageHeaders,
               size: 58,
               radius: 18,
               fallbackIcon: style.icon,
               colors: style.colors,
+              localPrefix: state.server?.baseUrl,
+              label: pkg.displayName,
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -681,6 +750,7 @@ class _PackageCard extends StatelessWidget {
   final DsmPackage package;
   final List<String> iconUrls;
   final Map<String, String> headers;
+  final String? localPrefix;
   final bool busy;
   final ValueChanged<bool> onToggle;
   final VoidCallback onTap;
@@ -691,6 +761,7 @@ class _PackageCard extends StatelessWidget {
     required this.busy,
     required this.onToggle,
     required this.onTap,
+    this.localPrefix,
   });
 
   @override
@@ -711,6 +782,8 @@ class _PackageCard extends StatelessWidget {
             radius: 15,
             fallbackIcon: style.icon,
             colors: style.colors,
+            localPrefix: localPrefix,
+            label: package.displayName,
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -758,6 +831,8 @@ class _PackageIcon extends StatefulWidget {
   final double radius;
   final IconData fallbackIcon;
   final List<Color> colors;
+  final String? localPrefix;
+  final String? label;
   const _PackageIcon({
     required this.urls,
     required this.headers,
@@ -765,6 +840,8 @@ class _PackageIcon extends StatefulWidget {
     required this.radius,
     required this.fallbackIcon,
     required this.colors,
+    this.localPrefix,
+    this.label,
   });
 
   @override
@@ -775,6 +852,7 @@ class _PackageIconState extends State<_PackageIcon> {
   int _index = 0;
 
   Widget _fallback() {
+    final label = (widget.label ?? '').trim();
     return Container(
       width: widget.size,
       height: widget.size,
@@ -783,7 +861,14 @@ class _PackageIconState extends State<_PackageIcon> {
         borderRadius: BorderRadius.circular(widget.radius),
         boxShadow: [BoxShadow(color: widget.colors.last.withValues(alpha: 0.28), blurRadius: 13, offset: const Offset(0, 6))],
       ),
-      child: Icon(widget.fallbackIcon, color: Colors.white, size: widget.size * 0.48),
+      child: label.isEmpty
+          ? Icon(widget.fallbackIcon, color: Colors.white, size: widget.size * 0.48)
+          : Center(
+              child: Text(
+                label.substring(0, 1).toUpperCase(),
+                style: TextStyle(color: Colors.white, fontSize: widget.size * 0.4, fontWeight: FontWeight.w600, height: 1),
+              ),
+            ),
     );
   }
 
@@ -791,14 +876,16 @@ class _PackageIconState extends State<_PackageIcon> {
   Widget build(BuildContext context) {
     if (widget.urls.isEmpty) return _fallback();
     final index = _index.clamp(0, widget.urls.length - 1);
+    final url = widget.urls[index];
+    final isLocal = widget.localPrefix != null && widget.localPrefix!.isNotEmpty && url.startsWith(widget.localPrefix!);
     return ClipRRect(
       borderRadius: BorderRadius.circular(widget.radius),
       child: Image.network(
-        widget.urls[index],
+        url,
         width: widget.size,
         height: widget.size,
         fit: BoxFit.cover,
-        headers: widget.headers,
+        headers: isLocal ? widget.headers : const {},
         errorBuilder: (_, __, ___) {
           if (index < widget.urls.length - 1) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -839,4 +926,23 @@ _PackageStyle _styleFor(DsmPackage pkg) {
   if (id.contains('chat') || id.contains('message')) return const _PackageStyle(Icons.forum_rounded, [Color(0xFFFF9FB6), Color(0xFFFF6E93)]);
   if (pkg.isSystemService) return const _PackageStyle(Icons.shield_rounded, [Color(0xFFA7B4CC), Color(0xFF7B88A1)]);
   return const _PackageStyle(Icons.extension_rounded, [Color(0xFFA7B4CC), Color(0xFF7B88A1)]);
+}
+
+class _SourceBadge extends StatelessWidget {
+  final bool official;
+  const _SourceBadge({required this.official});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final color = official ? c.primary : const Color(0xFF9A6BFF);
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
+      decoration: BoxDecoration(color: color.withValues(alpha: 0.10), borderRadius: BorderRadius.circular(6)),
+      child: Text(
+        official ? '官方' : '社区',
+        style: context.texts.labelSmall?.copyWith(color: color, fontSize: 9, fontWeight: FontWeight.w600, height: 1.2),
+      ),
+    );
+  }
 }

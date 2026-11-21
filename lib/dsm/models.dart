@@ -893,6 +893,7 @@ class CatalogPackage {
   final String description;
   final String category;
   final String iconUrl;
+  final String source;
   final bool beta;
 
   const CatalogPackage({
@@ -902,6 +903,7 @@ class CatalogPackage {
     this.description = '',
     this.category = '',
     this.iconUrl = '',
+    this.source = '',
     this.beta = false,
   });
 
@@ -912,8 +914,20 @@ class CatalogPackage {
         description: _asString(d['desc'] ?? d['description']),
         category: _asString(d['category'] ?? d['type']),
         iconUrl: _asString(((d['thumbnail'] as List?)?.isNotEmpty == true ? (d['thumbnail'] as List).first : null) ?? ((d['thumbnail_retina'] as List?)?.isNotEmpty == true ? (d['thumbnail_retina'] as List).first : null)),
+        source: _asString(d['source']),
         beta: d['beta'] == true,
       );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'version': version,
+        'description': description,
+        'category': category,
+        'iconUrl': iconUrl,
+        'source': source,
+        'beta': beta,
+      };
 }
 
 class PackageVolume {

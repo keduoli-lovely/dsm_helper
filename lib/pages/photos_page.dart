@@ -727,21 +727,24 @@ class _PhotoViewerPageState extends State<_PhotoViewerPage> {
                           const SizedBox(width: 12),
                           Expanded(
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.center,
                               children: [
                                 Text(
                                   date == null ? '图片' : '${date.month}月${date.day}日',
+                                  textAlign: TextAlign.center,
                                   style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600),
                                 ),
                                 if (date != null)
                                   Text(
-                                    _fmt(date),
-                                    style: const TextStyle(color: Colors.white60, fontSize: 12),
+                                    '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}',
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(color: Colors.white70, fontSize: 12),
                                   ),
                               ],
                             ),
                           ),
-                          _circleAction(Icons.info_outline_rounded, _showDetails),
+                          const SizedBox(width: 12),
+                          _circleAction(Icons.more_vert_rounded, _showDetails),
                         ],
                       ),
                     ),
@@ -766,11 +769,11 @@ class _PhotoViewerPageState extends State<_PhotoViewerPage> {
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(20, 26, 20, 12),
                       child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        mainAxisAlignment: MainAxisAlignment.center,
                         children: [
                           _bottomAction(_sharing ? Icons.hourglass_top_rounded : Icons.share_rounded, _sharing ? '处理中' : '分享', _share),
-                          _bottomAction(Icons.info_outline_rounded, '详情', _showDetails),
-                          _bottomAction(Icons.open_in_new_rounded, '打开原图', _openOriginal),
+                          const SizedBox(width: 84),
+                          _bottomAction(Icons.open_in_new_rounded, '查看原图', _openOriginal),
                         ],
                       ),
                     ),

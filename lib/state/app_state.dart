@@ -23,6 +23,7 @@ class AppState extends ChangeNotifier {
   static const _kActiveTool = 'active_download_tool_v2';
   static const _kPhotoSource = 'photo_source_v2';
   static const _kAvatar = 'avatar_path_v2';
+  static const _kCatalogCache = 'catalog_cache_v1';
 
   BootPhase phase = BootPhase.booting;
   ThemeMode themeMode = ThemeMode.light;
@@ -50,6 +51,7 @@ class AppState extends ChangeNotifier {
   int? latencyMs;
   bool? online;
   String? customAvatarPath;
+  List<CatalogPackage> catalogCache = [];
 
   static Future<AppState> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -100,6 +102,15 @@ class AppState extends ChangeNotifier {
       }
     }
     customAvatarPath = _prefs.getString(_kAvatar);
+    final rawCatalog = _prefs.getString(_kCatalogCache);
+    if (rawCatalog != null && rawCatalog.isNotEmpty) {
+      try {
+        final list = jsonDecode(rawCatalog) as List;
+        catalogCache = list.whereType<Map>().map((e) => CatalogPackage.fromJson(e.cast<String, dynamic>())).toList();
+      } catch (_) {
+        catalogCache = [];
+      }
+    }
     activeToolId = _prefs.getString(_kActiveTool);
     if (activeToolId != null && downloadTools.every((t) => t.id != activeToolId)) {
       activeToolId = null;
@@ -301,6 +312,11 @@ class AppState extends ChangeNotifier {
       latencyMs = null;
     }
     if (notify) notifyListeners();
+  }
+
+  Future<void> saveCatalogCache(List<CatalogPackage> packages) async {
+    catalogCache = packages;
+    await _prefs.setString(_kCatalogCache, jsonEncode(packages.map((e) => e.toJson()).toList()));
   }
 
   Future<void> setCustomAvatar(String? path) async {

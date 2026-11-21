@@ -565,7 +565,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
               Text('还没有下载工具', style: context.texts.headlineSmall),
               const SizedBox(height: 8),
               Text(
-                '支持 DSM Download Station、qBittorrent 与 Transmission，\n配置一次就能直接管理下载任务。',
+                '支持 qBittorrent（API Key 或账号密码）与 Aria2，\n配置一次就能直接管理下载任务。',
                 textAlign: TextAlign.center,
                 style: context.texts.bodySmall?.copyWith(color: c.textTertiary, height: 1.7),
               ),

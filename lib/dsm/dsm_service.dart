@@ -397,27 +397,48 @@ class DsmService {
 
   Future<List<CatalogPackage>> catalogPackages() async {
     if (demo) return DemoStore.instance.catalogPackages();
-    Map<String, dynamic> data;
+    final merged = <String, CatalogPackage>{};
+    DsmException? lastError;
+    for (final others in const [false, true]) {
+      try {
+        final data = await _catalogRequest(others);
+        final raw = data['packages'] ?? data['data'];
+        final list = raw is List ? raw : const [];
+        final beta = (data['beta_packages'] as List?) ?? const [];
+        for (final item in [...list, ...beta]) {
+          if (item is! Map) continue;
+          final pkg = CatalogPackage.fromJson(item.cast<String, dynamic>());
+          if (pkg.id.isEmpty) continue;
+          // 官方优先，社区只在缺失时补充。
+          merged.putIfAbsent(pkg.id.toLowerCase(), () => pkg);
+        }
+      } on DsmException catch (e) {
+        lastError = e;
+      }
+    }
+    if (merged.isEmpty && lastError != null) throw lastError;
+    final result = merged.values.toList();
+    result.sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+    return result;
+  }
+
+  Future<Map<String, dynamic>> _catalogRequest(bool others) async {
     try {
-      data = await client.callMap(
+      return await client.callMap(
         api: 'SYNO.Core.Package.Server',
         method: 'list',
         version: 2,
-        params: {'updateSprite': true, 'blforcereload': false, 'blloadothers': true},
+        params: {'updateSprite': true, 'blforcereload': false, 'blloadothers': others},
       );
     } on DsmException {
-      data = await client.callMap(
+      return client.callMap(
         api: 'SYNO.Core.Package.Server',
         method: 'list',
         version: 1,
-        params: {'updateSprite': true, 'blforcereload': false, 'blloadothers': true},
+        params: {'updateSprite': true, 'blforcereload': false, 'blloadothers': others},
       );
     }
-    final raw = data['packages'] ?? data['data'];
-    final list = raw is List ? raw : const [];
-    return list.whereType<Map>().map((e) => CatalogPackage.fromJson(e.cast<String, dynamic>())).where((p) => p.id.isNotEmpty).toList();
   }
-
   Future<List<PackageVolume>> packageVolumes() async {
     if (demo) return DemoStore.instance.packageVolumes();
     final data = await client.callMap(
