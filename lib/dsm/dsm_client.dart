@@ -255,9 +255,11 @@ class DsmClient {
     final uri = _webapi.replace(path: '${_webapi.path}entry.cgi', queryParameters: {
       'api': 'SYNO.FileStation.Upload',
       'method': 'upload',
-      'version': '1',
+      'version': '2',
       if (sid.isNotEmpty) '_sid': sid,
       if (synoToken.isNotEmpty) 'SynoToken': synoToken,
+      'path': destDir,
+      'overwrite': 'true',
     });
     final request = http.MultipartRequest('POST', uri)
       ..headers.addAll({
@@ -265,19 +267,14 @@ class DsmClient {
         if (cookie.isNotEmpty) 'Cookie': cookie,
         if (synoToken.isNotEmpty) 'X-SYNO-TOKEN': synoToken,
       });
-    request.fields.addAll({
-      'path': destDir,
-      'dest_path': destDir,
-      'create_parents': 'true',
-      'overwrite': 'true',
-    });
     var sent = 0;
     final tracked = stream.map((chunk) {
       sent += chunk.length;
       onProgress?.call(sent, length);
       return chunk;
     });
-    request.files.add(http.MultipartFile('file', tracked, length, filename: filename));
+    final safeName = filename.replaceAll('+', '_').replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
+    request.files.add(http.MultipartFile('file', tracked, length, filename: safeName));
     try {
       final streamed = await _http.send(request).timeout(const Duration(minutes: 30));
       final response = await http.Response.fromStream(streamed);
