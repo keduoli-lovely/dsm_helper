@@ -439,9 +439,9 @@ class _DownloadsPageState extends State<DownloadsPage> {
                                   width: 44,
                                   height: 44,
                                   decoration: BoxDecoration(
-                                    gradient: const LinearGradient(colors: [Color(0xFF6FA9FF), Color(0xFF2E6BFF)]),
+                                    gradient: LinearGradient(colors: [c.primary, c.primaryDeep]),
                                     borderRadius: BorderRadius.circular(15),
-                                    boxShadow: [BoxShadow(color: const Color(0xFF2E6BFF).withValues(alpha: 0.35), blurRadius: 16, offset: const Offset(0, 7))],
+                                    boxShadow: [BoxShadow(color: c.primary.withValues(alpha: 0.35), blurRadius: 16, offset: const Offset(0, 7))],
                                   ),
                                   child: const Icon(Icons.add_rounded, color: Colors.white, size: 25),
                                 ),
@@ -559,43 +559,52 @@ class _DownloadsPageState extends State<DownloadsPage> {
     );
   }
   Widget _buildNoTools(AppColors c) {
-    return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 10, 20, 132),
+    return Column(
       children: [
-        Text('未配置下载工具', style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 11.5)),
-        const SizedBox(height: 30),
-        Center(
-          child: Column(
-            children: [
-              Container(
-                width: 82,
-                height: 82,
-                decoration: BoxDecoration(
-                  gradient: const LinearGradient(colors: [Color(0xFF6FA9FF), Color(0xFF2E6BFF)]),
-                  borderRadius: BorderRadius.circular(26),
-                  boxShadow: [BoxShadow(color: const Color(0xFF2E6BFF).withValues(alpha: 0.30), blurRadius: 24, offset: const Offset(0, 12))],
-                ),
-                child: const Icon(Icons.cloud_download_rounded, size: 40, color: Colors.white),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Text('未配置下载工具', style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 11.5)),
+          ),
+        ),
+        Expanded(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 96),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 82,
+                    height: 82,
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(colors: [c.primary, c.primaryDeep]),
+                      borderRadius: BorderRadius.circular(26),
+                      boxShadow: [BoxShadow(color: c.primary.withValues(alpha: 0.30), blurRadius: 24, offset: const Offset(0, 12))],
+                    ),
+                    child: const Icon(Icons.cloud_download_rounded, size: 40, color: Colors.white),
+                  ),
+                  const SizedBox(height: 18),
+                  Text('还没有下载工具', style: context.texts.headlineSmall),
+                  const SizedBox(height: 8),
+                  Text(
+                    '支持 qBittorrent（API Key 或账号密码）与 Aria2，\n配置一次就能直接管理下载任务。',
+                    textAlign: TextAlign.center,
+                    style: context.texts.bodySmall?.copyWith(color: c.textTertiary, height: 1.7),
+                  ),
+                  const SizedBox(height: 24),
+                  SizedBox(
+                    width: 220,
+                    child: FilledButton.icon(
+                      onPressed: _addToolFlow,
+                      icon: const Icon(Icons.add_rounded, size: 20),
+                      label: const Text('添加下载工具'),
+                    ),
+                  ),
+                ],
               ),
-              const SizedBox(height: 18),
-              Text('还没有下载工具', style: context.texts.headlineSmall),
-              const SizedBox(height: 8),
-              Text(
-                '支持 qBittorrent（API Key 或账号密码）与 Aria2，\n配置一次就能直接管理下载任务。',
-                textAlign: TextAlign.center,
-                style: context.texts.bodySmall?.copyWith(color: c.textTertiary, height: 1.7),
-              ),
-              const SizedBox(height: 24),
-              SizedBox(
-                width: 220,
-                child: FilledButton.icon(
-                  onPressed: _addToolFlow,
-                  icon: const Icon(Icons.add_rounded, size: 20),
-                  label: const Text('添加下载工具'),
-                ),
-              ),
-
-            ],
+            ),
           ),
         ),
       ],
