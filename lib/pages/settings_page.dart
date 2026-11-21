@@ -114,18 +114,11 @@ class _SettingsPageState extends State<SettingsPage> {
               child: Row(
                 children: [
                   Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('我的', style: context.texts.titleMedium?.copyWith(fontSize: 20)),
-                        const SizedBox(height: 2),
-                        Text(
-                          state.server?.baseUrl ?? '未连接设备',
-                          style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 11.5),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ],
+                    child: Text(
+                      state.server?.baseUrl ?? '未连接设备',
+                      style: context.texts.labelLarge?.copyWith(color: c.textSecondary, fontSize: 13),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
                   ),
                   IconButton(

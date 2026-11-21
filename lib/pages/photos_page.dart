@@ -45,6 +45,8 @@ class _PhotosPageState extends State<PhotosPage> {
   StreamSubscription<PhotoItem>? _folderSub;
   int _folderGen = 0;
   final Set<String> _seen = {};
+  final List<PhotoItem> _pending = [];
+  Timer? _flushTimer;
   bool _refreshing = false;
   bool _sortDesc = true;
   static final Map<String, _PhotoCache> _cache = {};
@@ -109,6 +111,7 @@ class _PhotosPageState extends State<PhotosPage> {
 
   @override
   void dispose() {
+    _flushTimer?.cancel();
     _folderSub?.cancel();
     _scroll.dispose();
     _immich?.dispose();
@@ -195,6 +198,13 @@ class _PhotosPageState extends State<PhotosPage> {
     }
   }
 
+  void _flushPending() {
+    if (!mounted || _pending.isEmpty) return;
+    final batch = List<PhotoItem>.from(_pending);
+    _pending.clear();
+    setState(() => _items.addAll(batch));
+  }
+
   Future<void> _startFolderStream(AppState state, PhotoSource source, {bool keepExisting = false}) async {
     final generation = ++_folderGen;
     final service = state.service;
@@ -227,11 +237,12 @@ class _PhotosPageState extends State<PhotosPage> {
       (item) {
         if (!mounted || generation != _folderGen) return;
         if (!_seen.add(item.id)) return;
-        setState(() {
-          _loading = false;
-          _refreshing = false;
-          _items.add(item);
-          _items.sort((a, b) => _sortDesc ? (b.takenAt ?? DateTime(0)).compareTo(a.takenAt ?? DateTime(0)) : (a.takenAt ?? DateTime(0)).compareTo(b.takenAt ?? DateTime(0)));
+        _pending.add(item);
+        _loading = false;
+        _refreshing = false;
+        _flushTimer ??= Timer(const Duration(milliseconds: 150), () {
+          _flushTimer = null;
+          _flushPending();
         });
       },
       onError: (Object e) {
@@ -243,10 +254,12 @@ class _PhotosPageState extends State<PhotosPage> {
       },
       onDone: () {
         if (!mounted || generation != _folderGen) return;
+        _flushPending();
         setState(() {
           _loading = false;
           _refreshing = false;
           _hasMore = false;
+          _items.sort((a, b) => _sortDesc ? (b.takenAt ?? DateTime(0)).compareTo(a.takenAt ?? DateTime(0)) : (a.takenAt ?? DateTime(0)).compareTo(b.takenAt ?? DateTime(0)));
         });
         _saveCache(source);
       },

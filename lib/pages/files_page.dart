@@ -197,7 +197,7 @@ class _FilesPageState extends State<FilesPage> {
                       children: [
                         Expanded(
                           child: Text(
-                            storage == null ? '浏览你的私有云文件' : '已用  · 共 ',
+                            storage == null ? '浏览你的私有云文件' : '已用 ${formatBytes(storage.usedBytes)} · 共 ${formatBytes(storage.totalBytes)}',
                             style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 11.5),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,

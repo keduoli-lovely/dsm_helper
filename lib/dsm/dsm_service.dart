@@ -866,7 +866,7 @@ class DsmService {
 
     void pump() {
       if (closed) return;
-      while (active < 12 && queue.isNotEmpty) {
+      while (active < 6 && queue.isNotEmpty) {
         final dir = queue.removeAt(0);
         active++;
         scanDir(dir).whenComplete(() {

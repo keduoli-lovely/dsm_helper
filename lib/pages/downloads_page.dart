@@ -405,7 +405,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
         ? '未配置下载工具'
         : _tasks.isEmpty
             ? '没有下载任务'
-            : '当前下载任务  · ';
+            : '当前下载任务 $activeCount · ${formatSpeed(speed)}';
 
     return Scaffold(
       backgroundColor: Colors.transparent,

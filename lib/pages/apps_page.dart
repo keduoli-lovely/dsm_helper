@@ -202,7 +202,7 @@ class _AppsPageState extends State<AppsPage> {
                       children: [
                         Expanded(
                           child: Text(
-                            _packages.isEmpty ? '管理已安装的套件' : ' 个运行中 · 共  个',
+                            _packages.isEmpty ? '管理已安装的套件' : '$running 个运行中 · 共 ${_packages.length} 个',
                             style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 11.5),
                           ),
                         ),
