@@ -767,11 +767,14 @@ class DsmService {
   }
 
   bool _isSystemPhotoPath(String path) {
+    final isImmich = path.toLowerCase().contains('/immich-app/');
     for (final part in path.split('/')) {
       if (part.isEmpty) continue;
       final lower = part.toLowerCase();
       if (lower == '@eadir' || lower == '@recycle' || lower == '#recycle' || lower == '.@__thumb' || lower == '@tmp') return true;
       if (part.startsWith('@') || part.startsWith('#')) return true;
+      if (lower == 'thumbs' || lower == 'thumbnail' || lower == 'thumbnails' || lower == 'encoded-video' || lower == 'backups' || lower == 'profile' || lower == 'postgres' || lower == 'redis' || lower == 'model-cache') return true;
+      if (isImmich && lower == 'upload') return true;
     }
     return false;
   }
