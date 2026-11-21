@@ -104,7 +104,7 @@ class DsmClient {
     });
     final result = (data['data'] as Map?)?.cast<String, dynamic>() ?? const {};
     sid = (result['sid'] ?? '').toString();
-    synoToken = (result['synotoken'] ?? '').toString();
+    synoToken = (result['synotoken'] ?? result['syno_token'] ?? '').toString();
     if (sid.isEmpty) {
       throw const DsmException(500, '登录失败：未获取到会话，请检查地址与端口');
     }
