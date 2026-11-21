@@ -36,7 +36,10 @@ class _AppsPageState extends State<AppsPage> {
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _load();
+      _loadCatalog();
+    });
   }
 
   @override
@@ -318,8 +321,8 @@ class _AppsPageState extends State<AppsPage> {
       child: Row(
         children: [
           _PackageIcon(
-            urls: state.service?.packageIconUrls(item.id) ?? const [],
-            headers: state.imageHeaders,
+            urls: item.iconUrl.isNotEmpty ? [item.iconUrl] : (state.service?.packageIconUrls(item.id) ?? const []),
+            headers: item.iconUrl.isNotEmpty ? const {} : state.imageHeaders,
             size: 46,
             radius: 14,
             fallbackIcon: style.icon,
@@ -527,8 +530,11 @@ class _AppsPageState extends State<AppsPage> {
       if (mounted) showToast(context, e.message, icon: Icons.error_outline_rounded);
     }
   }
+  Map<String, String> get _catalogIconById => {for (final item in _catalog) if (item.iconUrl.isNotEmpty) item.id.toLowerCase(): item.iconUrl};
+
   List<Widget> _section(String title, IconData icon, List<DsmPackage> packages, AppState state) {
     final c = context.colors;
+    final catalogIcons = _catalogIconById;
     return [
       Padding(
         padding: const EdgeInsets.fromLTRB(2, 6, 2, 10),
@@ -547,8 +553,8 @@ class _AppsPageState extends State<AppsPage> {
           padding: const EdgeInsets.only(bottom: 10),
           child: _PackageCard(
             package: pkg,
-            iconUrls: state.service?.packageIconUrls(pkg.id) ?? const [],
-            headers: state.imageHeaders,
+            iconUrls: catalogIcons[pkg.id.toLowerCase()] != null ? [catalogIcons[pkg.id.toLowerCase()]!] : (state.service?.packageIconUrls(pkg.id) ?? const []),
+            headers: catalogIcons[pkg.id.toLowerCase()] != null ? const {} : state.imageHeaders,
             busy: _busy.contains(pkg.id),
             onToggle: (v) => _toggle(pkg, v),
             onTap: () => _showDetail(pkg, state),

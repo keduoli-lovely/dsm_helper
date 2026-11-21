@@ -892,6 +892,7 @@ class CatalogPackage {
   final String version;
   final String description;
   final String category;
+  final String iconUrl;
   final bool beta;
 
   const CatalogPackage({
@@ -900,6 +901,7 @@ class CatalogPackage {
     this.version = '',
     this.description = '',
     this.category = '',
+    this.iconUrl = '',
     this.beta = false,
   });
 
@@ -909,6 +911,7 @@ class CatalogPackage {
         version: _asString(d['version']),
         description: _asString(d['desc'] ?? d['description']),
         category: _asString(d['category'] ?? d['type']),
+        iconUrl: _asString(((d['thumbnail'] as List?)?.isNotEmpty == true ? (d['thumbnail'] as List).first : null) ?? ((d['thumbnail_retina'] as List?)?.isNotEmpty == true ? (d['thumbnail_retina'] as List).first : null)),
         beta: d['beta'] == true,
       );
 }
@@ -924,7 +927,7 @@ class PackageVolume {
   factory PackageVolume.fromJson(Map<String, dynamic> d) => PackageVolume(
         path: _asString(d['volume_path'] ?? d['path']),
         name: _asString(d['display_name'] ?? d['desc'] ?? d['volume_path']),
-        freeBytes: (d['size_free_byte'] as num?)?.toInt() ?? 0,
+        freeBytes: int.tryParse('${d['size_free_byte'] ?? ''}') ?? 0,
         fsType: _asString(d['fs_type']),
       );
 }

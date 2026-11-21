@@ -1,5 +1,10 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
+import 'package:path_provider/path_provider.dart';
+import 'package:share_plus/share_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 
@@ -31,13 +36,28 @@ class _PhotosPageState extends State<PhotosPage> {
   int _page = 1;
   static const int _pageSize = 80;
   ImmichClient? _immich;
+  static final Map<String, _PhotoCache> _cache = {};
 
   @override
   void initState() {
     super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) => _load(reset: true));
+    final source = context.read<AppState>().photoSource;
+    final cached = _cache[_cacheKey(source)];
+    if (cached != null) {
+      _items.addAll(cached.items);
+      _hasMore = cached.hasMore;
+      _loading = false;
+    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _load(reset: true, background: cached != null));
     _scroll.addListener(_onScroll);
   }
+
+  String _cacheKey(PhotoSource source) => switch (source.type) {
+        PhotoSourceType.folder => 'folder:',
+        PhotoSourceType.synologyPhotos => 'photos',
+        PhotoSourceType.immich => 'immich:',
+        PhotoSourceType.none => '',
+      };
 
   @override
   void dispose() {
@@ -53,8 +73,9 @@ class _PhotosPageState extends State<PhotosPage> {
     }
   }
 
-  Future<void> _load({bool reset = false}) async {
+  Future<void> _load({bool reset = false, bool background = false}) async {
     if (!reset && (_loadingMore || !_hasMore)) return;
+    final previous = List<PhotoItem>.from(_items);
     final state = context.read<AppState>();
     final source = state.photoSource;
     if (!source.configured) {
@@ -66,22 +87,25 @@ class _PhotosPageState extends State<PhotosPage> {
       });
       return;
     }
-    setState(() {
-      if (reset) {
-        _loading = true;
-        _page = 1;
-        _hasMore = true;
-        _items.clear();
-      } else {
-        _loadingMore = true;
-      }
-      _error = null;
-    });
+    if (!background) {
+      setState(() {
+        if (reset) {
+          _loading = true;
+          _page = 1;
+          _hasMore = true;
+          _items.clear();
+        } else {
+          _loadingMore = true;
+        }
+        _error = null;
+      });
+    }
 
     try {
       final fetched = await _fetch(state, source, reset ? 0 : _items.length, _page);
       if (!mounted) return;
       setState(() {
+        if (background) _items.clear();
         _items.addAll(fetched.where((e) => _items.every((old) => old.id != e.id)));
         _items.sort((a, b) => (b.takenAt ?? DateTime(0)).compareTo(a.takenAt ?? DateTime(0)));
         _hasMore = fetched.length >= _pageSize;
@@ -90,8 +114,13 @@ class _PhotosPageState extends State<PhotosPage> {
         _error = null;
       });
       if (fetched.isNotEmpty) _page++;
+      _cache[_cacheKey(source)] = _PhotoCache(List.unmodifiable(_items.take(500).toList()), _hasMore, DateTime.now());
     } on DsmException catch (e) {
       if (!mounted) return;
+      if (background) {
+        if (mounted) setState(() => _items..clear()..addAll(previous));
+        return;
+      }
       setState(() {
         _error = e.message;
         _loading = false;
@@ -483,8 +512,12 @@ class _PhotoViewerPage extends StatefulWidget {
 
 class _PhotoViewerPageState extends State<_PhotoViewerPage> {
   Map<String, dynamic>? _fileInfo;
+  bool _chrome = true;
+  bool _sharing = false;
 
   PhotoItem get item => widget.item;
+
+  String get _url => item.originalUrl.isNotEmpty ? item.originalUrl : item.thumbUrl;
 
   @override
   void initState() {
@@ -501,6 +534,8 @@ class _PhotoViewerPageState extends State<_PhotoViewerPage> {
     } catch (_) {}
   }
 
+  String _fmt(DateTime? value) => value == null ? '未知' : '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')} ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+
   Future<void> _showDetails() async {
     final c = context.colors;
     final info = _fileInfo;
@@ -509,7 +544,6 @@ class _PhotoViewerPageState extends State<_PhotoViewerPage> {
     final mtime = (time['mtime'] as num?)?.toInt();
     final size = (additional['size'] as num?)?.toInt() ?? item.size;
     final date = mtime != null ? DateTime.fromMillisecondsSinceEpoch(mtime * 1000) : (item.takenAt ?? item.createdAt);
-    String fmt(DateTime? value) => value == null ? '未知' : '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')} ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
     await showAppSheet(
       context,
       title: '图片详情',
@@ -522,7 +556,7 @@ class _PhotoViewerPageState extends State<_PhotoViewerPage> {
             children: [
               _detailRow('文件名', item.name),
               _detailRow('大小', size > 0 ? formatBytes(size) : '未知'),
-              _detailRow('时间', fmt(date)),
+              _detailRow('时间', _fmt(date)),
               _detailRow('路径', item.path.isEmpty ? '相册索引（无本地路径）' : item.path),
             ],
           ),
@@ -545,134 +579,234 @@ class _PhotoViewerPageState extends State<_PhotoViewerPage> {
     );
   }
 
+  Future<void> _showLink(String url) async {
+    await showAppSheet(
+      context,
+      title: '分享链接已创建',
+      subtitle: item.name,
+      children: [
+        SoftCard(
+          shadow: false,
+          color: context.colors.surfaceAlt,
+          child: SelectableText(url, style: context.texts.bodySmall?.copyWith(color: context.colors.textPrimary, height: 1.5)),
+        ),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Expanded(
+              child: OutlinedButton.icon(
+                onPressed: () async {
+                  await Clipboard.setData(ClipboardData(text: url));
+                  if (mounted) showToast(context, '链接已复制');
+                },
+                icon: const Icon(Icons.copy_rounded, size: 18),
+                label: const Text('复制链接'),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Expanded(
+              child: FilledButton.icon(
+                onPressed: () => launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication),
+                icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                label: const Text('打开链接'),
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
   Future<void> _share() async {
-    final service = context.read<AppState>().service;
-    if (service == null || item.path.isEmpty) {
-      showToast(context, '这张图片没有可分享的 DSM 路径', icon: Icons.info_outline_rounded);
+    if (_sharing) return;
+    final state = context.read<AppState>();
+    final source = state.photoSource;
+    if (source.type == PhotoSourceType.folder && item.path.isNotEmpty) {
+      final service = state.service;
+      if (service == null) return;
+      try {
+        final link = await service.createSharingLink(item.path);
+        if (mounted) _showLink(link.url);
+      } on DsmException catch (e) {
+        if (mounted) showToast(context, e.message, icon: Icons.error_outline_rounded);
+      }
       return;
     }
-    try {
-      final link = await service.createSharingLink(item.path);
-      if (!mounted) return;
-      await showAppSheet(
-        context,
-        title: '共享链接已创建',
-        subtitle: item.name,
-        children: [
-          SoftCard(
-            shadow: false,
-            color: context.colors.surfaceAlt,
-            child: SelectableText(link.url, style: context.texts.bodySmall?.copyWith(color: context.colors.textPrimary, height: 1.5)),
-          ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: () async {
-                    await Clipboard.setData(ClipboardData(text: link.url));
-                    if (mounted) showToast(context, '链接已复制');
-                  },
-                  icon: const Icon(Icons.copy_rounded, size: 18),
-                  label: const Text('复制链接'),
-                ),
-              ),
-              const SizedBox(width: 10),
-              Expanded(
-                child: FilledButton.icon(
-                  onPressed: () => launchUrl(Uri.parse(link.url), mode: LaunchMode.externalApplication),
-                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
-                  label: const Text('打开链接'),
-                ),
-              ),
-            ],
-          ),
-        ],
-      );
-    } on DsmException catch (e) {
-      if (mounted) showToast(context, e.message, icon: Icons.error_outline_rounded);
+    if (source.type == PhotoSourceType.immich) {
+      final client = ImmichClient(url: source.immichUrl, apiKey: source.immichKey, trustSelfSigned: source.trustSelfSigned);
+      try {
+        final url = await client.createShareLink(item.id);
+        if (mounted) _showLink(url);
+        client.dispose();
+        return;
+      } catch (_) {
+        client.dispose();
+      }
     }
+    await _shareFile();
+  }
+
+  Future<void> _shareFile() async {
+    if (_url.isEmpty) {
+      showToast(context, '没有可分享的图片地址', icon: Icons.info_outline_rounded);
+      return;
+    }
+    setState(() => _sharing = true);
+    try {
+      final response = await http.get(Uri.parse(_url), headers: item.headers).timeout(const Duration(seconds: 40));
+      if (response.statusCode != 200) {
+        throw DsmException(-1, '下载图片失败（HTTP ${response.statusCode}）');
+      }
+      final dir = await getTemporaryDirectory();
+      final file = File('${dir.path}/${item.name.isEmpty ? 'photo.jpg' : item.name}');
+      await file.writeAsBytes(response.bodyBytes);
+      if (!mounted) return;
+      await Share.shareXFiles([XFile(file.path)], text: item.name);
+    } catch (e) {
+      if (mounted) showToast(context, '分享失败：$e', icon: Icons.error_outline_rounded);
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
+  }
+
+  Future<void> _openOriginal() async {
+    if (_url.isEmpty) return;
+    await launchUrl(Uri.parse(_url), mode: LaunchMode.externalApplication);
   }
 
   @override
   Widget build(BuildContext context) {
-    final url = item.originalUrl.isNotEmpty ? item.originalUrl : item.thumbUrl;
+    final date = item.takenAt ?? item.createdAt;
     return Scaffold(
       backgroundColor: const Color(0xFF08090D),
-      body: SafeArea(
-        child: Column(
-          children: [
-            Padding(
-              padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-              child: Row(
-                children: [
-                  GestureDetector(
-                    onTap: () => Navigator.of(context).maybePop(),
-                    child: Container(
-                      width: 38,
-                      height: 38,
-                      decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(13)),
-                      child: const Icon(Icons.arrow_back_ios_new_rounded, size: 18, color: Colors.white),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(item.name, style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600), maxLines: 1, overflow: TextOverflow.ellipsis),
-                        if (item.takenAt != null)
-                          Text(
-                            '${item.takenAt!.year}-${item.takenAt!.month.toString().padLeft(2, '0')}-${item.takenAt!.day.toString().padLeft(2, '0')}',
-                            style: const TextStyle(color: Colors.white38, fontSize: 11.5),
-                          ),
-                      ],
-                    ),
-                  ),
-                  _viewerAction(Icons.info_outline_rounded, _showDetails),
-                  if (item.path.isNotEmpty) ...[
-                    const SizedBox(width: 8),
-                    _viewerAction(Icons.share_rounded, _share),
-                  ],
-                ],
-              ),
-            ),
-            Expanded(
-              child: url.isEmpty
+      body: Stack(
+        children: [
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: () => setState(() => _chrome = !_chrome),
+              child: _url.isEmpty
                   ? const Center(child: Icon(Icons.image_not_supported_rounded, size: 48, color: Colors.white24))
                   : InteractiveViewer(
                       minScale: 0.8,
                       maxScale: 4,
                       child: Center(
                         child: Image.network(
-                          url,
+                          _url,
                           headers: item.headers,
                           fit: BoxFit.contain,
                           loadingBuilder: (context, child, progress) {
                             if (progress == null) return child;
                             return const Center(child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white54));
                           },
-                          errorBuilder: (_, __, ___) => item.thumbUrl.isNotEmpty && item.thumbUrl != url
+                          errorBuilder: (_, __, ___) => item.thumbUrl.isNotEmpty && item.thumbUrl != _url
                               ? Image.network(item.thumbUrl, headers: item.headers, fit: BoxFit.contain)
                               : const Icon(Icons.broken_image_rounded, size: 48, color: Colors.white24),
                         ),
                       ),
                     ),
             ),
-          ],
-        ),
+          ),
+          AnimatedOpacity(
+            duration: const Duration(milliseconds: 180),
+            opacity: _chrome ? 1 : 0,
+            child: IgnorePointer(
+              ignoring: !_chrome,
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black87, Colors.transparent]),
+                  ),
+                  child: SafeArea(
+                    bottom: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
+                      child: Row(
+                        children: [
+                          _circleAction(Icons.arrow_back_ios_new_rounded, () => Navigator.of(context).maybePop()),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  date == null ? '图片' : '${date.month}月${date.day}日',
+                                  style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600),
+                                ),
+                                if (date != null)
+                                  Text(
+                                    _fmt(date),
+                                    style: const TextStyle(color: Colors.white60, fontSize: 12),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          _circleAction(Icons.info_outline_rounded, _showDetails),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+          AnimatedOpacity(
+            duration: const Duration(milliseconds: 180),
+            opacity: _chrome ? 1 : 0,
+            child: IgnorePointer(
+              ignoring: !_chrome,
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: Container(
+                  decoration: const BoxDecoration(
+                    gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black87, Colors.transparent]),
+                  ),
+                  child: SafeArea(
+                    top: false,
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(20, 26, 20, 12),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceAround,
+                        children: [
+                          _bottomAction(_sharing ? Icons.hourglass_top_rounded : Icons.share_rounded, _sharing ? '处理中' : '分享', _share),
+                          _bottomAction(Icons.info_outline_rounded, '详情', _showDetails),
+                          _bottomAction(Icons.open_in_new_rounded, '打开原图', _openOriginal),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
 
-  Widget _viewerAction(IconData icon, VoidCallback onTap) {
+  Widget _circleAction(IconData icon, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
         width: 38,
         height: 38,
-        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(13)),
+        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.14), borderRadius: BorderRadius.circular(13)),
         child: Icon(icon, size: 18, color: Colors.white),
+      ),
+    );
+  }
+
+  Widget _bottomAction(IconData icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: Colors.white, size: 23),
+          const SizedBox(height: 5),
+          Text(label, style: const TextStyle(color: Colors.white, fontSize: 11)),
+        ],
       ),
     );
   }
@@ -778,4 +912,11 @@ class _ImmichDialogState extends State<_ImmichDialog> {
       ],
     );
   }
+}
+
+class _PhotoCache {
+  final List<PhotoItem> items;
+  final bool hasMore;
+  final DateTime savedAt;
+  const _PhotoCache(this.items, this.hasMore, this.savedAt);
 }

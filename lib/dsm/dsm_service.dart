@@ -689,7 +689,6 @@ class DsmService {
         'limit': limit,
         'sort_by': 'takentime',
         'sort_direction': 'desc',
-        'additional': ['thumbnail', 'resolution'],
       },
     );
     final list = (data['list'] ?? data['items']) as List? ?? const [];
@@ -700,10 +699,12 @@ class DsmService {
       final cacheKey = thumbnail['cache_key']?.toString();
       final time = item['time'] as num?;
       final id = '${item['id']}';
+      final size = (item['filesize'] as num?)?.toInt() ?? int.tryParse('${item['filesize'] ?? ''}') ?? 0;
       return PhotoItem(
         id: id,
         name: '${item['filename'] ?? ''}',
         takenAt: time == null ? null : DateTime.fromMillisecondsSinceEpoch(time.toInt() * 1000),
+        size: size,
         thumbUrl: _fotoThumbUrl(id, cacheKey, 'm'),
         originalUrl: _fotoThumbUrl(id, cacheKey, 'xl'),
       );
@@ -718,77 +719,82 @@ class DsmService {
           'version': '2',
           'id': id,
           'size': size,
-          'type': 'unit',
-          if (cacheKey != null && cacheKey.isNotEmpty) 'cache_key': '"$cacheKey"',
+          'type': '"unit"',
+          'cache_key': '"${cacheKey ?? ''}"',
           if (client.sessionId.isNotEmpty) '_sid': client.sessionId,
         })
         .toString();
   }
 
   /// 选取一个 DSM 文件夹作为相册（只取图片文件）。
-  final Map<String, String> _folderPhotoTasks = {};
+  final Map<String, List<PhotoItem>> _folderPhotoCache = {};
 
-  /// 递归读取目录及子目录中的图片，分页返回；搜索任务在服务端缓存。
+  /// 递归遍历目录（FileStation.List），把图片元数据缓存起来；页面再按 offset/limit 懒加载。
   Future<List<PhotoItem>> folderPhotoPage(String path, {int offset = 0, int limit = 80}) async {
     if (demo) {
       final entries = await files(path);
       return entries.where((e) => !e.isDir && e.kind == FileKind.image).map(_photoFromEntry).toList();
     }
-    var taskId = _folderPhotoTasks[path];
-    if (taskId == null) {
-      final start = await client.callMap(
-        api: 'SYNO.FileStation.Search',
-        method: 'start',
-        version: 1,
-        params: {
-          'folder_path': path,
-          'recursive': true,
-          'extension': 'jpg,jpeg,png,gif,webp,bmp,heic,heif',
-        },
-      );
-      taskId = '${start['taskid'] ?? ''}';
-      if (taskId.isEmpty) throw const DsmException(-1, '无法开始读取该目录，请确认目录可访问');
-      _folderPhotoTasks[path] = taskId;
+    final index = _folderPhotoCache[path] ??= await _buildFolderPhotoIndex(path);
+    return index.skip(offset).take(limit).toList();
+  }
+
+  Future<List<PhotoItem>> _buildFolderPhotoIndex(String path) async {
+    final images = <PhotoItem>[];
+    final seen = <String>{};
+    final queue = <String>[path];
+    var dirs = 0;
+    while (queue.isNotEmpty && dirs < 300 && images.length < 3000) {
+      final dir = queue.removeAt(0);
+      dirs++;
+      var offset = 0;
+      while (true) {
+        final data = await client.callMap(
+          api: 'SYNO.FileStation.List',
+          method: 'list',
+          version: 2,
+          params: {
+            'folder_path': dir,
+            'offset': offset,
+            'limit': 500,
+            'sort_by': 'mtime',
+            'sort_direction': 'desc',
+            'additional': ['size', 'time', 'type'],
+          },
+        );
+        final files = (data['files'] as List?) ?? const [];
+        for (final raw in files.whereType<Map>()) {
+          final map = raw.cast<String, dynamic>();
+          final filePath = '${map['path'] ?? ''}';
+          if (map['isdir'] == true) {
+            if (filePath.isNotEmpty) queue.add(filePath);
+            continue;
+          }
+          final name = '${map['name'] ?? ''}';
+          if (!RegExp(r'\.(jpe?g|png|gif|webp|bmp|heic|heif)$', caseSensitive: false).hasMatch(name)) continue;
+          if (filePath.isEmpty || !seen.add(filePath)) continue;
+          final additional = (map['additional'] as Map?)?.cast<String, dynamic>() ?? const {};
+          final time = (additional['time'] as Map?)?.cast<String, dynamic>() ?? const {};
+          final mtime = (time['mtime'] as num?)?.toInt();
+          final size = (additional['size'] as num?)?.toInt() ?? 0;
+          images.add(PhotoItem(
+            id: filePath,
+            name: name,
+            takenAt: mtime == null ? null : DateTime.fromMillisecondsSinceEpoch(mtime * 1000),
+            createdAt: mtime == null ? null : DateTime.fromMillisecondsSinceEpoch(mtime * 1000),
+            size: size,
+            path: filePath,
+            thumbUrl: thumbnailUri(filePath, size: 'small')?.toString() ?? '',
+            originalUrl: downloadUri(filePath, open: true).toString(),
+          ));
+        }
+        final total = (data['total'] as num?)?.toInt() ?? files.length;
+        offset += files.length;
+        if (files.isEmpty || files.length < 500 || offset >= total) break;
+      }
     }
-    Map<String, dynamic> data = const {};
-    for (var attempt = 0; attempt < 5; attempt++) {
-      data = await client.callMap(
-        api: 'SYNO.FileStation.Search',
-        method: 'list',
-        version: 1,
-        params: {
-          'taskid': taskId,
-          'offset': offset,
-          'limit': limit,
-          'additional': ['size', 'time', 'type'],
-        },
-      );
-      final page = (data['files'] as List?) ?? const [];
-      if (page.isNotEmpty || data['finished'] == true) break;
-      await Future.delayed(const Duration(milliseconds: 350));
-    }
-    final photoMaps = (data['files'] as List?) ?? const [];
-    final items = photoMaps.whereType<Map>().map((raw) {
-      final map = raw.cast<String, dynamic>();
-      if (map['isdir'] == true) return null;
-      final additional = (map['additional'] as Map?)?.cast<String, dynamic>() ?? const {};
-      final time = (additional['time'] as Map?)?.cast<String, dynamic>() ?? const {};
-      final mtime = (time['mtime'] as num?)?.toInt();
-      final size = (additional['size'] as num?)?.toInt() ?? 0;
-      final filePath = '${map['path'] ?? ''}';
-      return PhotoItem(
-        id: filePath,
-        name: '${map['name'] ?? ''}',
-        takenAt: mtime == null ? null : DateTime.fromMillisecondsSinceEpoch(mtime * 1000),
-        createdAt: mtime == null ? null : DateTime.fromMillisecondsSinceEpoch(mtime * 1000),
-        size: size,
-        path: filePath,
-        thumbUrl: thumbnailUri(filePath, size: 'small')?.toString() ?? '',
-        originalUrl: downloadUri(filePath, open: true).toString(),
-      );
-    }).whereType<PhotoItem>().toList();
-    items.sort((a, b) => (b.takenAt ?? DateTime(0)).compareTo(a.takenAt ?? DateTime(0)));
-    return items;
+    images.sort((a, b) => (b.takenAt ?? DateTime(0)).compareTo(a.takenAt ?? DateTime(0)));
+    return images;
   }
 
   PhotoItem _photoFromEntry(FileEntry entry) => PhotoItem(
@@ -803,9 +809,8 @@ class DsmService {
       );
 
   void resetFolderPhotoTask(String path) {
-    _folderPhotoTasks.remove(path);
+    _folderPhotoCache.remove(path);
   }
-
   Future<Map<String, dynamic>> fileInfo(String path) async {
     final data = await client.callMap(
       api: 'SYNO.FileStation.List',

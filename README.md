@@ -29,7 +29,7 @@
 - **本地头像**：我的 → 头像，可选择本机图片；未选择时使用内置默认头像
 - **文件**：共享文件夹（显示内部文件夹/文件数量）、目录浏览与面包屑、上传（兼容 Android SAF）、下载、重命名、删除、图片预览、群晖共享链接（可设置有效期、密码、访问次数）、当前目录搜索
 - **下载**：支持 **qBittorrent（API Key 或账号密码两种登录）** 与 **Aria2**，可配置多个工具、局域网自动发现、任务进度/速度、暂停/继续/删除、添加链接
-- **相册**：三种照片来源 —— **DSM 文件夹（递归读取子目录、分页懒加载、优先新图）**、**Synology Photos 时间线**、**Immich（地址 + API Key）**；按月分组、缩略图、大图预览，查看详情并创建共享链接
+- **相册**：三种照片来源 —— **DSM 文件夹（递归子目录、分页懒加载、优先新图）**、**Synology Photos 时间线**、**Immich（地址 + API Key）**；客户端缓存秒开、按月分组、缩略图、大图详情与分享（DSM 共享链接 / Immich 链接 / 系统分享）
 - **套件中心**：已安装套件、读取 DSM Web 端真实图标、运行状态与启停，系统服务不可停止；兼容 DSM 7 将 `status` 放在 `additional` 对象里的返回结构
 - **Docker**：独立的容器管理页，支持容器列表、状态、端口、启动 / 停止 / 重启 / 删除、查看日志，镜像列表与拉取，以及创建容器；首页可添加「Docker 容器」展示组件
 - **导航**：底部导航的根页面不显示返回按钮；从首页或列表压入的详情页始终显示返回，避免「有的页面能回、有的不能回」
@@ -42,7 +42,7 @@
 ## 技术栈
 
 - Flutter 3.38 / Dart 3.10（Material 3，跨 Android / iOS / Windows 桌面）
-- `provider` 状态管理、`http`（自建 DSM WebAPI 客户端）、`shared_preferences`、`file_picker`、`path_provider`、`url_launcher`、`crypto`
+- `provider` 状态管理、`http`（自建 DSM WebAPI 客户端）、`shared_preferences`、`file_picker`、`path_provider`、`url_launcher`、`share_plus`、`crypto`
 - 设计系统集中在 `lib/theme/app_theme.dart`，图表与设备插画全部为 `CustomPainter`，无重量级 UI 依赖
 
 ## 目录结构
@@ -124,6 +124,7 @@ flutter build apk --release
 
 - 暂未提供视频播放、缩略图列表与 VMM 虚拟机详情
 - Docker 的创建 / 拉取依赖 DSM Container Manager 的接口与镜像源，不同 DSM 版本参数略有差异，失败时会显示原因
+- Synology Photos 没有单张公开链接 API，分享采用系统分享；Immich 使用 `/api/shared-links` 创建公开链接
 - 文件搜索当前只搜索「最近修改」中的文件，尚未接入服务端全局搜索
 - qBittorrent / Aria2 的 BT 种子文件上传尚未实现（支持 http / https / magnet / ftp 链接）
 - 日志清除、用户编辑等管理接口在不同 DSM 版本上可能存在差异，失败时会给出提示

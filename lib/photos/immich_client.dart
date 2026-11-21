@@ -62,13 +62,17 @@ class ImmichClient {
       final item = raw.cast<String, dynamic>();
       if ((item['type'] ?? 'IMAGE').toString().toUpperCase() != 'IMAGE') continue;
       final id = '${item['id']}';
-      final time = item['fileCreatedAt'] ?? item['localDateTime'] ?? item['exifInfo']?['dateTimeOriginal'];
+      final exif = (item['exifInfo'] as Map?)?.cast<String, dynamic>() ?? const {};
+      final time = item['fileCreatedAt'] ?? item['localDateTime'] ?? exif['dateTimeOriginal'];
       DateTime? takenAt;
       if (time is String) takenAt = DateTime.tryParse(time)?.toLocal();
+      final size = (item['fileSizeInByte'] as num?)?.toInt() ?? (exif['fileSizeInByte'] as num?)?.toInt() ?? 0;
       result.add(PhotoItem(
         id: id,
         name: '${item['originalFileName'] ?? item['originalPath'] ?? ''}',
         takenAt: takenAt,
+        createdAt: takenAt,
+        size: size,
         thumbUrl: thumbnailUrl(id, 'preview'),
         originalUrl: originalUrl(id),
         headers: {'x-api-key': apiKey},
@@ -80,6 +84,27 @@ class ImmichClient {
   String thumbnailUrl(String id, [String size = 'thumbnail']) => '$baseUrl/api/assets/$id/thumbnail?size=$size';
 
   String originalUrl(String id) => '$baseUrl/api/assets/$id/original';
+
+  Future<String> createShareLink(String assetId) async {
+    final response = await _http
+        .post(
+          _uri('/api/shared-links'),
+          headers: {...headers, 'Content-Type': 'application/json'},
+          body: jsonEncode({
+            'type': 'INDIVIDUAL',
+            'assetIds': [assetId],
+            'allowDownload': true,
+          }),
+        )
+        .timeout(const Duration(seconds: 15));
+    if (response.statusCode != 200 && response.statusCode != 201) {
+      throw DsmException(-1, 'Immich 创建分享链接失败（HTTP ${response.statusCode}）');
+    }
+    final data = jsonDecode(utf8.decode(response.bodyBytes));
+    final key = data is Map ? (data['key'] ?? data['slug'] ?? data['id'] ?? '').toString() : '';
+    if (key.isEmpty) throw const DsmException(-1, 'Immich 未返回分享链接');
+    return '$baseUrl/share/$key';
+  }
 
   void dispose() => _http.close();
 }

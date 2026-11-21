@@ -178,8 +178,9 @@ class DsmClient {
     required String method,
     int version = 1,
     Map<String, Object?> params = const {},
+    bool useApiVersion = true,
   }) async {
-    final data = await call(api: api, method: method, version: version, params: params);
+    final data = await call(api: api, method: method, version: version, params: params, useApiVersion: useApiVersion);
     if (data is Map) return data.cast<String, dynamic>();
     return <String, dynamic>{};
   }
