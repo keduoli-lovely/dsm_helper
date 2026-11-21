@@ -12,6 +12,7 @@ from urllib.parse import urlparse, parse_qs
 SID = "MOCKSID123"
 HERE = os.path.dirname(os.path.abspath(__file__))
 STATE = {"logged_in": False}
+SEARCH_TASKS = {}
 
 USERS = [
     {"name": "admin", "description": "系统管理员", "email": "admin@example.com", "groups": ["administrators"]},
@@ -48,6 +49,11 @@ def api_info():
             "SYNO.Core.System.Utilization",
             "SYNO.Storage.CGI.Storage",
             "SYNO.FileStation.List",
+            "SYNO.FileStation.Search",
+            "SYNO.Core.Storage.Volume",
+            "SYNO.Core.Package.Server",
+            "SYNO.Core.Package.Installation",
+            "SYNO.Core.Package.Uninstallation",
             "SYNO.FileStation.CreateFolder",
             "SYNO.FileStation.Rename",
             "SYNO.FileStation.Delete",
@@ -310,6 +316,38 @@ class Handler(BaseHTTPRequestHandler):
         if api == "SYNO.FileStation.List" and method == "list":
             path = p.get("folder_path", "/")
             return {"success": True, "data": {"files": FILES.get(path, []), "total": len(FILES.get(path, []))}}
+        if api == "SYNO.FileStation.List" and method == "getinfo":
+            path = p.get("path")
+            if isinstance(path, str):
+                try:
+                    path = json.loads(path)
+                except Exception:
+                    path = [path]
+            result = []
+            for item in (path or []):
+                for entries in FILES.values():
+                    for entry in entries:
+                        if entry.get("path") == item:
+                            result.append(entry)
+            return {"success": True, "data": {"files": result}}
+        if api == "SYNO.FileStation.Search" and method == "start":
+            folder = p.get("folder_path", "/")
+            found = []
+            for current, entries in FILES.items():
+                if current == folder or current.startswith(folder.rstrip("/") + "/"):
+                    for entry in entries:
+                        if entry.get("isdir"):
+                            continue
+                        name = entry.get("name", "").lower()
+                        if name.endswith((".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp", ".heic", ".heif")):
+                            found.append(entry)
+            SEARCH_TASKS["mock-task"] = found
+            return {"success": True, "data": {"taskid": "mock-task"}}
+        if api == "SYNO.FileStation.Search" and method == "list":
+            offset = int(p.get("offset", 0))
+            limit = int(p.get("limit", 100))
+            rows = SEARCH_TASKS.get(p.get("taskid", "mock-task"), [])
+            return {"success": True, "data": {"files": rows[offset: offset + limit], "total": len(rows), "finished": True}}
         if api == "SYNO.FileStation.CreateFolder":
             return {"success": True, "data": {"folders": []}}
         if api == "SYNO.FileStation.Rename":
@@ -351,6 +389,39 @@ class Handler(BaseHTTPRequestHandler):
             }
             for pkg in PACKAGES
         ]}}
+        if api == "SYNO.Core.Package.Server" and method == "list":
+            catalog = []
+            installed = {pkg["id"] for pkg in PACKAGES}
+            for pkg in PACKAGES:
+                catalog.append({
+                    "id": pkg["id"], "dname": pkg["name"], "desc": pkg.get("description", ""),
+                    "version": pkg["version"], "beta": False, "installed": True,
+                })
+            for extra in [
+                {"id": "SynologyChat", "dname": "Synology Chat", "desc": "团队即时通讯", "version": "2.4.7-22071"},
+                {"id": "GitServer", "dname": "Git Server", "desc": "在 NAS 上托管 Git 仓库", "version": "2.4.1-0121"},
+                {"id": "SynologyCalendar", "dname": "Synology Calendar", "desc": "共享日历", "version": "2.4.3-11150"},
+            ]:
+                if extra["id"] not in installed:
+                    extra["beta"] = False
+                    catalog.append(extra)
+            return {"success": True, "data": {"packages": catalog}}
+        if api == "SYNO.Core.Storage.Volume" and method == "list":
+            return {"success": True, "data": {"volumes": [
+                {"volume_path": "/volume1", "display_name": "存储空间 1", "size_free_byte": 2000000000000, "fs_type": "btrfs"},
+                {"volume_path": "/volume2", "display_name": "存储空间 2", "size_free_byte": 1200000000000, "fs_type": "btrfs"},
+            ]}}
+        if api == "SYNO.Core.Package.Installation" and method == "install":
+            pid = p.get("name")
+            if not any(pkg["id"] == pid for pkg in PACKAGES):
+                PACKAGES.append({"id": pid, "name": pid, "version": "1.0.0-0001", "status": "running", "startable": True, "description": "新安装的套件"})
+            return {"success": True, "data": {"taskid": "mock-install", "progress": 0}}
+        if api == "SYNO.Core.Package.Installation" and method == "status":
+            return {"success": True, "data": {"finished": True, "progress": 100, "status": "finished"}}
+        if api == "SYNO.Core.Package.Uninstallation" and method == "uninstall":
+            pid = p.get("id")
+            PACKAGES[:] = [pkg for pkg in PACKAGES if pkg["id"] != pid]
+            return {"success": True, "data": {}}
         if api == "SYNO.Core.Package.Control":
             pid = p.get("id")
             for pkg in PACKAGES:

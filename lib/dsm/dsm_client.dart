@@ -184,6 +184,30 @@ class DsmClient {
     return <String, dynamic>{};
   }
 
+  /// POST 版本的 callMap，安装/卸载套件等写操作使用。
+  Future<Map<String, dynamic>> callPostMap({
+    required String api,
+    required String method,
+    int version = 1,
+    Map<String, Object?> params = const {},
+  }) async {
+    final body = <String, String>{
+      'api': api,
+      'method': method,
+      'version': '${versionFor(api, version)}',
+      if (sid.isNotEmpty) '_sid': sid,
+    };
+    for (final entry in params.entries) {
+      final value = entry.value;
+      if (value == null) continue;
+      body[entry.key] = _encodeParam(value);
+    }
+    final data = await _raw('entry.cgi', body, post: true);
+    final payload = data['data'];
+    if (payload is Map) return payload.cast<String, dynamic>();
+    return <String, dynamic>{};
+  }
+
   Future<List<dynamic>> callList({
     required String api,
     required String method,

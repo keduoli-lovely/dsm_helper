@@ -27,6 +27,11 @@ class _AppsPageState extends State<AppsPage> {
   String _query = '';
   final _search = TextEditingController();
   bool _requested = false;
+  bool _library = false;
+  List<CatalogPackage> _catalog = [];
+  List<PackageVolume> _volumes = [];
+  bool _catalogLoading = false;
+  String? _catalogError;
 
   @override
   void initState() {
@@ -70,6 +75,39 @@ class _AppsPageState extends State<AppsPage> {
       setState(() {
         _error = '$e';
         _loading = false;
+      });
+    }
+  }
+
+  Future<void> _loadCatalog() async {
+    final service = context.read<AppState>().service;
+    if (service == null) return;
+    setState(() {
+      _catalogLoading = true;
+      _catalogError = null;
+    });
+    try {
+      final results = await Future.wait([
+        service.catalogPackages(),
+        service.packageVolumes(),
+      ]);
+      if (!mounted) return;
+      setState(() {
+        _catalog = results[0] as List<CatalogPackage>;
+        _volumes = results[1] as List<PackageVolume>;
+        _catalogLoading = false;
+      });
+    } on DsmException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _catalogError = e.message;
+        _catalogLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _catalogError = '';
+        _catalogLoading = false;
       });
     }
   }
@@ -157,6 +195,26 @@ class _AppsPageState extends State<AppsPage> {
                 index: 2,
                 child: Row(
                   children: [
+                    _FilterPill(label: '已安装', selected: !_library, onTap: () => setState(() => _library = false)),
+                    const SizedBox(width: 8),
+                    _FilterPill(
+                      label: '套件库',
+                      selected: _library,
+                      onTap: () {
+                        setState(() => _library = true);
+                        if (_catalog.isEmpty && !_catalogLoading) _loadCatalog();
+                      },
+                    ),
+                    const Spacer(),
+                    if (_library)
+                      Text('${_catalog.length} 个套件', style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 10.5)),
+                  ],
+                ),
+              ),
+              if (!_library) ...[
+                const SizedBox(height: 10),
+                Row(
+                  children: [
                     _FilterPill(label: '全部', selected: _filter == 0, onTap: () => setState(() => _filter = 0)),
                     const SizedBox(width: 8),
                     _FilterPill(label: '运行中', selected: _filter == 1, onTap: () => setState(() => _filter = 1)),
@@ -164,9 +222,26 @@ class _AppsPageState extends State<AppsPage> {
                     _FilterPill(label: '已停止', selected: _filter == 2, onTap: () => setState(() => _filter = 2)),
                   ],
                 ),
-              ),
+              ],
               const SizedBox(height: 16),
-              if (_loading)
+              if (_library) ...[
+                if (_catalogLoading)
+                  const Padding(
+                    padding: EdgeInsets.symmetric(vertical: 60),
+                    child: Center(child: CircularProgressIndicator(strokeWidth: 2.4)),
+                  )
+                else if (_catalogError != null)
+                  EmptyHint(
+                    icon: Icons.cloud_off_rounded,
+                    title: '无法读取套件库',
+                    subtitle: _catalogError,
+                    action: FilledButton(onPressed: _loadCatalog, style: FilledButton.styleFrom(minimumSize: const Size(120, 42)), child: const Text('重试')),
+                  )
+                else if (_catalog.isEmpty)
+                  const EmptyHint(icon: Icons.storefront_rounded, title: '套件库为空', subtitle: '当前账号可能没有套件中心权限')
+                else
+                  ..._catalogWidgets(state),
+              ] else if (_loading)
                 const Padding(
                   padding: EdgeInsets.symmetric(vertical: 60),
                   child: Center(child: CircularProgressIndicator(strokeWidth: 2.4)),
@@ -191,6 +266,267 @@ class _AppsPageState extends State<AppsPage> {
     );
   }
 
+  bool _versionGreater(String latest, String installed) {
+    List<int> parse(String value) => RegExp(r'\d+').allMatches(value).map((m) => int.tryParse(m.group(0)!) ?? 0).toList();
+    final a = parse(latest);
+    final b = parse(installed);
+    for (var i = 0; i < a.length || i < b.length; i++) {
+      final left = i < a.length ? a[i] : 0;
+      final right = i < b.length ? b[i] : 0;
+      if (left != right) return left > right;
+    }
+    return false;
+  }
+
+  List<Widget> _catalogWidgets(AppState state) {
+    final installed = {for (final p in _packages) p.id.toLowerCase(): p};
+    final items = _catalog.where((item) {
+      if (_query.isEmpty) return true;
+      final q = _query.toLowerCase();
+      return item.name.toLowerCase().contains(q) || item.id.toLowerCase().contains(q);
+    }).toList();
+    bool canUpdate(CatalogPackage item) {
+      final pkg = installed[item.id.toLowerCase()];
+      return pkg != null && item.version.isNotEmpty && _versionGreater(item.version, pkg.version);
+    }
+
+    items.sort((a, b) {
+      final au = canUpdate(a) ? 0 : (installed.containsKey(a.id.toLowerCase()) ? 2 : 1);
+      final bu = canUpdate(b) ? 0 : (installed.containsKey(b.id.toLowerCase()) ? 2 : 1);
+      if (au != bu) return au.compareTo(bu);
+      return a.name.compareTo(b.name);
+    });
+
+    return [
+      for (final item in items)
+        Padding(
+          padding: const EdgeInsets.only(bottom: 10),
+          child: _catalogCard(item, installed[item.id.toLowerCase()], canUpdate(item), state),
+        ),
+      const SizedBox(height: 6),
+    ];
+  }
+
+  Widget _catalogCard(CatalogPackage item, DsmPackage? installed, bool canUpdate, AppState state) {
+    final c = context.colors;
+    final style = _styleFor(DsmPackage(id: item.id, name: item.name, version: item.version, status: ''));
+    final label = canUpdate ? '更新' : (installed != null ? '已安装' : '安装');
+    return SoftCard(
+      padding: const EdgeInsets.fromLTRB(14, 12, 12, 12),
+      radius: 18,
+      onTap: () => _showCatalogDetail(item, installed, canUpdate, state),
+      child: Row(
+        children: [
+          _PackageIcon(
+            urls: state.service?.packageIconUrls(item.id) ?? const [],
+            headers: state.imageHeaders,
+            size: 46,
+            radius: 14,
+            fallbackIcon: style.icon,
+            colors: style.colors,
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(item.name, style: context.texts.titleSmall?.copyWith(fontSize: 14), maxLines: 1, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 2),
+                Text(item.description.isEmpty ? item.id : item.description, style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 10.5), maxLines: 1, overflow: TextOverflow.ellipsis),
+                const SizedBox(height: 3),
+                Text(
+                  installed == null ? 'v${item.version}' : '已安装 ${installed.version}${canUpdate ? ' → ${item.version}' : ''}',
+                  style: context.texts.labelSmall?.copyWith(color: canUpdate ? c.primary : c.textTertiary, fontSize: 10.5),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 8),
+          if (label == '已安装')
+            Text('已安装', style: context.texts.labelSmall?.copyWith(color: c.success, fontSize: 11))
+          else
+            FilledButton(
+              onPressed: () => _install(item, canUpdate),
+              style: FilledButton.styleFrom(minimumSize: const Size(64, 34), padding: const EdgeInsets.symmetric(horizontal: 14)),
+              child: Text(label),
+            ),
+        ],
+      ),
+    );
+  }
+
+  void _showCatalogDetail(CatalogPackage item, DsmPackage? installed, bool canUpdate, AppState state) {
+    final style = _styleFor(DsmPackage(id: item.id, name: item.name, version: item.version, status: ''));
+    showAppSheet(
+      context,
+      title: item.name,
+      subtitle: installed == null ? '版本 ${item.version}' : '已安装 ${installed.version}${canUpdate ? ' · 可更新到 ${item.version}' : ''}',
+      children: [
+        Row(
+          children: [
+            _PackageIcon(
+              urls: state.service?.packageIconUrls(item.id) ?? const [],
+              headers: state.imageHeaders,
+              size: 58,
+              radius: 18,
+              fallbackIcon: style.icon,
+              colors: style.colors,
+            ),
+            const SizedBox(width: 14),
+            Expanded(
+              child: Text(item.description.isEmpty ? '暂无描述' : item.description, style: context.texts.bodySmall?.copyWith(color: context.colors.textTertiary, height: 1.5)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 14),
+        if (canUpdate)
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _install(item, true);
+            },
+            child: Text('更新到 ${item.version}'),
+          )
+        else if (installed == null)
+          FilledButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _install(item, false);
+            },
+            child: const Text('安装套件'),
+          )
+        else
+          FilledButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              _uninstall(installed);
+            },
+            style: FilledButton.styleFrom(backgroundColor: context.colors.danger),
+            icon: const Icon(Icons.delete_outline_rounded, size: 18),
+            label: const Text('卸载套件'),
+          ),
+      ],
+    );
+  }
+
+  Future<PackageVolume?> _pickVolume() async {
+    if (_volumes.isEmpty) return null;
+    if (_volumes.length == 1) return _volumes.first;
+    return showDialog<PackageVolume>(
+      context: context,
+      builder: (ctx) => SimpleDialog(
+        title: const Text('安装到哪个存储空间'),
+        children: [
+          for (final volume in _volumes)
+            SimpleDialogOption(
+              onPressed: () => Navigator.pop(ctx, volume),
+              child: Text('${volume.name}${volume.freeBytes > 0 ? ' · 可用 ${formatBytes(volume.freeBytes)}' : ''}'),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _install(CatalogPackage item, bool update) async {
+    final service = context.read<AppState>().service;
+    if (service == null) return;
+    if (_volumes.isEmpty) {
+      try {
+        _volumes = await service.packageVolumes();
+      } on DsmException catch (e) {
+        if (mounted) showToast(context, e.message, icon: Icons.error_outline_rounded);
+        return;
+      }
+    }
+    final volume = await _pickVolume();
+    if (volume == null) {
+      if (mounted) showToast(context, '没有可用的存储空间', icon: Icons.info_outline_rounded);
+      return;
+    }
+    if (!mounted) return;
+    final ok = await showConfirm(
+      context,
+      title: update ? '更新 ${item.name}？' : '安装 ${item.name}？',
+      message: '安装位置：${volume.name}。安装期间请保持设备在线。',
+      confirmText: update ? '更新' : '安装',
+    );
+    if (!ok || !mounted) return;
+
+    var progress = 0.0;
+    var status = '准备安装…';
+    StateSetter? setDialog;
+    var dialogOpen = true;
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) {
+          setDialog = setDialogState;
+          return AlertDialog(
+            title: Text(update ? '正在更新' : '正在安装'),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                LinearProgressIndicator(value: progress > 0 ? (progress / 100).clamp(0, 1) : null),
+                const SizedBox(height: 12),
+                Text(status, style: context.texts.bodySmall?.copyWith(color: context.colors.textTertiary)),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+    try {
+      final taskId = await service.installPackage(item.id, volume.path, beta: item.beta);
+      while (true) {
+        await Future.delayed(const Duration(seconds: 2));
+        final data = await service.packageInstallStatus(taskId);
+        final value = data['progress'];
+        progress = value is num ? value.toDouble() : double.tryParse('${value ?? ''}') ?? progress;
+        status = '${data['status'] ?? ''}'.isEmpty ? '安装中…' : '${data['status']}';
+        if (!mounted) return;
+        setDialog?.call(() {});
+        if (data['finished'] == true) break;
+      }
+      if (!mounted) return;
+      if (dialogOpen) {
+        Navigator.of(context, rootNavigator: true).pop();
+        dialogOpen = false;
+      }
+      showToast(context, update ? '${item.name} 已更新' : '${item.name} 已安装');
+      await _load(silent: true);
+      await _loadCatalog();
+    } on DsmException catch (e) {
+      if (!mounted) return;
+      if (dialogOpen) {
+        Navigator.of(context, rootNavigator: true).pop();
+        dialogOpen = false;
+      }
+      showToast(context, e.message, icon: Icons.error_outline_rounded);
+    }
+  }
+  Future<void> _uninstall(DsmPackage pkg) async {
+    final service = context.read<AppState>().service;
+    if (service == null) return;
+    final ok = await showConfirm(
+      context,
+      title: '卸载 ${pkg.displayName}？',
+      message: '套件数据可能一并删除，请确认已在 DSM 中备份。',
+      confirmText: '卸载',
+      danger: true,
+    );
+    if (!ok || !mounted) return;
+    try {
+      await service.uninstallPackage(pkg.id);
+      if (!mounted) return;
+      showToast(context, '${pkg.displayName} 已卸载');
+      await _load(silent: true);
+      if (_library) await _loadCatalog();
+    } on DsmException catch (e) {
+      if (mounted) showToast(context, e.message, icon: Icons.error_outline_rounded);
+    }
+  }
   List<Widget> _section(String title, IconData icon, List<DsmPackage> packages, AppState state) {
     final c = context.colors;
     return [
@@ -290,7 +626,18 @@ class _AppsPageState extends State<AppsPage> {
               ],
             ),
           ),
-      ],
+        if (!pkg.isSystemService) ...[
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              _uninstall(pkg);
+            },
+            style: OutlinedButton.styleFrom(foregroundColor: context.colors.danger),
+            icon: const Icon(Icons.delete_outline_rounded, size: 18),
+            label: const Text('卸载套件'),
+          ),
+        ],      ],
     );
   }
 }

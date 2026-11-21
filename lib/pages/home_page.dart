@@ -177,7 +177,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     if (!source.configured) return const [];
     try {
       if (source.type == PhotoSourceType.folder) {
-        return (await state.service!.folderPhotoItems(source.folderPath)).take(6).toList();
+        return (await state.service!.folderPhotoPage(source.folderPath, limit: 12)).take(6).toList();
       }
       if (source.type == PhotoSourceType.synologyPhotos) {
         return (await state.service!.synologyPhotoItems(limit: 6));

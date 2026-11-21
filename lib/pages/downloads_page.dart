@@ -59,6 +59,13 @@ class _DownloadsPageState extends State<DownloadsPage> {
   AppState get _state => context.read<AppState>();
 
   void _syncAdapter() {
+    if (_state.demo) {
+      if (_adapter is DemoDownloadAdapter) return;
+      _adapter?.dispose();
+      _adapter = DemoDownloadAdapter();
+      _adapterToolId = 'demo';
+      return;
+    }
     final tool = _state.activeTool;
     if (tool == null) {
       _adapter?.dispose();
@@ -248,7 +255,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: Icon(
-                      tool.type == DownloadToolType.dsm ? Icons.cloud_download_rounded : Icons.download_rounded,
+                      tool.type == DownloadToolType.aria2 ? Icons.wifi_tethering_rounded : Icons.download_rounded,
                       size: 19,
                       color: context.colors.primary,
                     ),
@@ -285,7 +292,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
         SheetAction(
           icon: Icons.add_rounded,
           label: '添加下载工具',
-          subtitle: 'qBittorrent / Transmission / Download Station',
+          subtitle: 'qBittorrent / Aria2',
           onTap: () {
             Navigator.pop(context);
             _addToolFlow();
@@ -294,7 +301,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
         SheetAction(
           icon: Icons.radar_rounded,
           label: '扫描局域网',
-          subtitle: '自动发现 qBittorrent / Transmission',
+          subtitle: '自动发现 qBittorrent / Aria2',
           onTap: () {
             Navigator.pop(context);
             _discoverTools();
@@ -768,13 +775,13 @@ class _ToolEditorState extends State<_ToolEditor> {
   late DownloadToolType _type = widget.initial?.type ?? DownloadToolType.qbittorrent;
   late final TextEditingController _host = TextEditingController(text: widget.initial?.host ?? widget.defaultHost);
   late final TextEditingController _port = TextEditingController(
-    text: widget.initial?.port ??
-        ((widget.initial?.type ?? DownloadToolType.qbittorrent) == DownloadToolType.dsm ? widget.defaultPort : '8080'),
+    text: widget.initial?.port ?? ((widget.initial?.type ?? DownloadToolType.qbittorrent) == DownloadToolType.aria2 ? '6800' : '8080'),
   );
   late final TextEditingController _name = TextEditingController(text: widget.initial?.name ?? '');
-  late final TextEditingController _username = TextEditingController(text: '');
-  late final TextEditingController _password = TextEditingController(text: '');
-  late final TextEditingController _apiKey = TextEditingController(text: '');
+  late final TextEditingController _username = TextEditingController(text: widget.initial?.username ?? '');
+  late final TextEditingController _password = TextEditingController(text: widget.initial?.password ?? '');
+  late final TextEditingController _apiKey = TextEditingController(text: widget.initial?.apiKey ?? '');
+  late final TextEditingController _secret = TextEditingController(text: widget.initial?.secret ?? '');
   late bool _https = widget.initial?.https ?? false;
   bool _testing = false;
   String? _error;
@@ -787,6 +794,7 @@ class _ToolEditorState extends State<_ToolEditor> {
     _username.dispose();
     _password.dispose();
     _apiKey.dispose();
+    _secret.dispose();
     super.dispose();
   }
 
@@ -797,11 +805,12 @@ class _ToolEditorState extends State<_ToolEditor> {
       type: type,
       name: _name.text.trim(),
       host: _host.text.trim(),
-      port: _port.text.trim().isEmpty ? (type == DownloadToolType.dsm ? '5000' : '8080') : _port.text.trim(),
+      port: _port.text.trim().isEmpty ? (type == DownloadToolType.aria2 ? '6800' : '8080') : _port.text.trim(),
       https: _https,
       username: _username.text.trim(),
       password: _password.text,
       apiKey: _apiKey.text.trim(),
+      secret: _secret.text.trim(),
     );
   }
 
@@ -853,16 +862,14 @@ class _ToolEditorState extends State<_ToolEditor> {
             const SizedBox(height: 16),
             Row(
               children: [
-                for (final type in DownloadToolType.values) ...[
+                for (final type in const [DownloadToolType.qbittorrent, DownloadToolType.aria2]) ...[
                   Expanded(
                     child: GestureDetector(
                       onTap: () {
                         setState(() {
                           _type = type;
-                          if (type == DownloadToolType.dsm) {
-                            _port.text = widget.defaultPort;
-                            _https = widget.defaultHttps;
-                          }
+                          _port.text = type == DownloadToolType.aria2 ? '6800' : '8080';
+                          _https = false;
                         });
                       },
                       child: AnimatedContainer(
@@ -876,9 +883,9 @@ class _ToolEditorState extends State<_ToolEditor> {
                         alignment: Alignment.center,
                         child: Text(
                           switch (type) {
-                            DownloadToolType.dsm => 'DSM',
                             DownloadToolType.qbittorrent => 'qBittorrent',
-                            DownloadToolType.transmission => 'Transmission',
+                            DownloadToolType.aria2 => 'Aria2',
+                            _ => 'qBittorrent',
                           },
                           style: context.texts.labelSmall?.copyWith(
                             fontSize: 11,
@@ -933,26 +940,32 @@ class _ToolEditorState extends State<_ToolEditor> {
                   Expanded(child: TextField(controller: _password, obscureText: true, decoration: const InputDecoration(hintText: '密码'))),
                 ],
               ),
+              const SizedBox(height: 4),
+              Text(
+                'API Key 与账号密码二选一；使用 Key 时不需要登录。',
+                style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 10.5),
+              ),
             ],
-            if (_type == DownloadToolType.transmission) ...[
+            if (_type == DownloadToolType.aria2) ...[
               const SizedBox(height: 10),
-              Row(
-                children: [
-                  Expanded(child: TextField(controller: _username, decoration: const InputDecoration(hintText: '用户名（可选）'))),
-                  const SizedBox(width: 8),
-                  Expanded(child: TextField(controller: _password, obscureText: true, decoration: const InputDecoration(hintText: '密码（可选）'))),
-                ],
+              TextField(
+                controller: _secret,
+                obscureText: true,
+                decoration: const InputDecoration(hintText: 'RPC Secret（可选，对应 --rpc-secret）'),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                'Aria2 需要开启 RPC：--enable-rpc --rpc-listen-all=true --rpc-allow-origin-all',
+                style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 10.5, height: 1.4),
               ),
             ],
-            if (_type != DownloadToolType.dsm) ...[
-              const SizedBox(height: 6),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: Text('使用 HTTPS', style: context.texts.bodyMedium?.copyWith(color: c.textPrimary, fontSize: 13)),
-                value: _https,
-                onChanged: (v) => setState(() => _https = v),
-              ),
-            ],
+            const SizedBox(height: 6),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: Text('使用 HTTPS', style: context.texts.bodyMedium?.copyWith(color: c.textPrimary, fontSize: 13)),
+              value: _https,
+              onChanged: (v) => setState(() => _https = v),
+            ),
             if (_error != null) ...[
               const SizedBox(height: 6),
               Container(

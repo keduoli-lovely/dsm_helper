@@ -342,6 +342,46 @@ class DemoStore {
     _packages[index] = DsmPackage(id: p.id, name: p.name, version: p.version, status: start ? 'running' : 'stopped');
   }
 
+  List<CatalogPackage> catalogPackages() {
+    final installed = {for (final p in _packages) p.id: p};
+    final items = <CatalogPackage>[
+      for (final p in _packages)
+        CatalogPackage(
+          id: p.id,
+          name: p.name,
+          version: p.version,
+          description: p.description,
+          beta: false,
+        ),
+      const CatalogPackage(id: 'SynologyChat', name: 'Synology Chat', version: '2.4.7-22071', description: '团队即时通讯与频道'),
+      const CatalogPackage(id: 'GitServer', name: 'Git Server', version: '2.4.1-0121', description: '在 NAS 上托管 Git 仓库'),
+      const CatalogPackage(id: 'SynologyCalendar', name: 'Synology Calendar', version: '2.4.3-11150', description: '共享日历与日程'),
+      const CatalogPackage(id: 'SurveillanceStation', name: 'Surveillance Station', version: '9.2.1-11441', description: '视频监控与录像'),
+      const CatalogPackage(id: 'MailPlusServer', name: 'MailPlus Server', version: '3.0.3-30110', description: '私有邮件服务器'),
+    ];
+    final result = [...items];
+    for (final p in installed.values) {
+      if (!result.any((item) => item.id == p.id)) {
+        result.add(CatalogPackage(id: p.id, name: p.name, version: p.version, description: p.description));
+      }
+    }
+    return result;
+  }
+
+  List<PackageVolume> packageVolumes() => const [
+        PackageVolume(path: '/volume1', name: '存储空间 1', freeBytes: 2000000000000, fsType: 'btrfs'),
+        PackageVolume(path: '/volume2', name: '存储空间 2', freeBytes: 1200000000000, fsType: 'btrfs'),
+      ];
+
+  void installPackage(String id, String volumePath) {
+    if (_packages.any((p) => p.id == id)) return;
+    final catalog = catalogPackages().firstWhere((p) => p.id == id, orElse: () => CatalogPackage(id: id, name: id));
+    _packages.add(DsmPackage(id: id, name: catalog.name, version: catalog.version, status: 'running', description: catalog.description));
+  }
+
+  void uninstallPackage(String id) {
+    _packages.removeWhere((p) => p.id == id);
+  }
   List<DsmUser> users() => [..._users];
 
   // ---------- Docker ----------

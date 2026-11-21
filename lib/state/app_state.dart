@@ -94,7 +94,7 @@ class AppState extends ChangeNotifier {
     if (rawTools != null && rawTools.isNotEmpty) {
       try {
         final list = jsonDecode(rawTools) as List;
-        downloadTools = list.whereType<Map>().map((e) => DownloadTool.fromJson(e.cast<String, dynamic>())).toList();
+        downloadTools = list.whereType<Map>().map((e) => DownloadTool.fromJson(e.cast<String, dynamic>())).where((t) => t.type == DownloadToolType.qbittorrent || t.type == DownloadToolType.aria2).toList();
       } catch (_) {
         downloadTools = [];
       }
@@ -145,7 +145,6 @@ class AppState extends ChangeNotifier {
     service = s;
     server = target;
     await _refreshCore(notify: false);
-    _ensureDsmDownloadTool();
   }
 
   void _handleAuthExpired() {
@@ -221,9 +220,7 @@ class AppState extends ChangeNotifier {
     latencyMs = 4;
     online = true;
     if (downloadTools.isEmpty) {
-      downloadTools = [
-        DownloadTool(id: 'demo-dsm', type: DownloadToolType.dsm, name: 'Download Station', host: '192.168.1.10', port: '5000'),
-      ];
+      downloadTools = [DownloadTool(id: 'demo-qb', type: DownloadToolType.qbittorrent, name: '演示 qBittorrent', host: 'demo', port: '8080')];
       activeToolId = downloadTools.first.id;
     }
     await _refreshCore(notify: false);
@@ -354,24 +351,6 @@ class AppState extends ChangeNotifier {
   }
 
   // ---------- 下载工具 ----------
-
-  void _ensureDsmDownloadTool() {
-    final target = server;
-    if (target == null) return;
-    final exists = downloadTools.any((t) => t.type == DownloadToolType.dsm && t.host == target.host);
-    if (exists) return;
-    final tool = DownloadTool(
-      id: 'dsm-${target.host}-${target.port}',
-      type: DownloadToolType.dsm,
-      name: 'Download Station',
-      host: target.host,
-      port: target.port,
-      https: target.https,
-    );
-    downloadTools = [tool, ...downloadTools];
-    activeToolId ??= tool.id;
-    _saveTools();
-  }
 
   Future<void> addDownloadTool(DownloadTool tool) async {
     final index = downloadTools.indexWhere((t) => t.id == tool.id);

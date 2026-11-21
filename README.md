@@ -28,8 +28,8 @@
 - **登录与设备管理**：DSM 6.x / 7.x 自适应、HTTP / HTTPS、自签证书忽略校验、两步验证（动态码）、多设备保存、自动登录、会话失效自动回登录页
 - **本地头像**：我的 → 头像，可选择本机图片；未选择时使用内置默认头像
 - **文件**：共享文件夹（显示内部文件夹/文件数量）、目录浏览与面包屑、上传（兼容 Android SAF）、下载、重命名、删除、图片预览、群晖共享链接（可设置有效期、密码、访问次数）、当前目录搜索
-- **下载**：可配置多个下载工具 —— **DSM Download Station（含 DSM 7 DownloadStation2）**、**qBittorrent（用户名密码或 5.2+ API Key）**、**Transmission**，支持局域网自动发现、任务进度/速度、暂停/继续/删除、添加链接
-- **相册**：三种照片来源 —— **DSM 文件夹**、**Synology Photos 时间线**、**Immich（地址 + API Key）**；按月分组、缩略图、大图预览
+- **下载**：支持 **qBittorrent（API Key 或账号密码两种登录）** 与 **Aria2**，可配置多个工具、局域网自动发现、任务进度/速度、暂停/继续/删除、添加链接
+- **相册**：三种照片来源 —— **DSM 文件夹（递归读取子目录、分页懒加载、优先新图）**、**Synology Photos 时间线**、**Immich（地址 + API Key）**；按月分组、缩略图、大图预览，查看详情并创建共享链接
 - **套件中心**：已安装套件、读取 DSM Web 端真实图标、运行状态与启停，系统服务不可停止；兼容 DSM 7 将 `status` 放在 `additional` 对象里的返回结构
 - **Docker**：独立的容器管理页，支持容器列表、状态、端口、启动 / 停止 / 重启 / 删除、查看日志，镜像列表与拉取，以及创建容器；首页可添加「Docker 容器」展示组件
 - **导航**：底部导航的根页面不显示返回按钮；从首页或列表压入的详情页始终显示返回，避免「有的页面能回、有的不能回」
@@ -50,7 +50,7 @@
 ```
 lib/
   dsm/          群晖 WebAPI 客户端、业务接口、数据模型
-  downloads/    Download Station / qBittorrent / Transmission 适配与发现
+  downloads/    qBittorrent / Aria2 适配与发现
   photos/       Immich API 客户端
   state/        登录会话、主题、首页组件、下载工具、相册来源、本地头像
   theme/        颜色 / 字号 / 圆角 / 组件主题
@@ -85,7 +85,7 @@ flutter build apk --release
 
 ## 连接黑群晖
 
-1. 确保手机和 NAS 在同一局域网，DSM 已开启 **File Station**（以及需要使用的 Download Station / 套件中心）
+1. 确保手机和 NAS 在同一局域网，DSM 已开启 **File Station** 与 **套件中心**
 2. 在登录页填写地址、端口（HTTP 默认 `5000`，HTTPS 默认 `5001`）、DSM 账号和密码
 3. 使用 HTTPS + 自签证书时，在「高级设置」中保持「忽略证书校验」开启
 4. 普通账号也能登录，但套件启停、电源、SSH、用户编辑、Docker 等操作需要管理员权限
@@ -108,16 +108,15 @@ flutter build apk --release
 
 首页进入「下载」→ 右上角调节按钮，可以：
 
-- 直接使用当前群晖的 Download Station
-- 添加局域网里的 qBittorrent（地址 + 端口 + 账号密码，或 qBittorrent 5.2+ 的 API Key）
-- 添加 Transmission（地址 + 可选账号密码）
-- 点击「扫描局域网」自动发现常见的 8080 / 8081 / 9091 端口
+- **qBittorrent**：地址 + 端口，可填账号密码登录，也可填 qBittorrent 5.2+ 的 API Key（Bearer）
+- **Aria2**：地址 + 端口 + RPC Secret（对应 --rpc-secret）
+- 点击「扫描局域网」自动发现常见的 8080 / 8081 / 6800 端口
 
 ## 相册来源
 
 「相册」→ 右上角调节按钮，可以选择：
 
-- **DSM 文件夹**：从共享文件夹读取图片；没有 photo 文件夹也没关系，可以在选择目录时新建
+- **DSM 文件夹**：递归读取所选目录及子目录中的图片，分页懒加载并按修改时间优先新图；没有 photo 文件夹也没关系，可以在选择目录时新建
 - **Synology Photos**：读取群晖 Photos 的时间线与缩略图
 - **Immich**：填写 Immich 地址与 API Key（需要 `asset.read` / `asset.view` 权限）
 
@@ -126,7 +125,7 @@ flutter build apk --release
 - 暂未提供视频播放、缩略图列表与 VMM 虚拟机详情
 - Docker 的创建 / 拉取依赖 DSM Container Manager 的接口与镜像源，不同 DSM 版本参数略有差异，失败时会显示原因
 - 文件搜索当前只搜索「最近修改」中的文件，尚未接入服务端全局搜索
-- Download Station 的 BT 种子文件上传尚未实现（支持 http / https / magnet / ftp 链接）
+- qBittorrent / Aria2 的 BT 种子文件上传尚未实现（支持 http / https / magnet / ftp 链接）
 - 日志清除、用户编辑等管理接口在不同 DSM 版本上可能存在差异，失败时会给出提示
 - 内网穿透场景下，下载/图片仍使用登录时填写的地址；内外网双地址自动切换尚未实现
 

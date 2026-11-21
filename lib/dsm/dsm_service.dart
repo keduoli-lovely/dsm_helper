@@ -395,6 +395,86 @@ class DsmService {
     return result;
   }
 
+  Future<List<CatalogPackage>> catalogPackages() async {
+    if (demo) return DemoStore.instance.catalogPackages();
+    Map<String, dynamic> data;
+    try {
+      data = await client.callMap(
+        api: 'SYNO.Core.Package.Server',
+        method: 'list',
+        version: 2,
+        params: {'updateSprite': true, 'blforcereload': false, 'blloadothers': true},
+      );
+    } on DsmException {
+      data = await client.callMap(
+        api: 'SYNO.Core.Package.Server',
+        method: 'list',
+        version: 1,
+        params: {'updateSprite': true, 'blforcereload': false, 'blloadothers': true},
+      );
+    }
+    final raw = data['packages'] ?? data['data'];
+    final list = raw is List ? raw : const [];
+    return list.whereType<Map>().map((e) => CatalogPackage.fromJson(e.cast<String, dynamic>())).where((p) => p.id.isNotEmpty).toList();
+  }
+
+  Future<List<PackageVolume>> packageVolumes() async {
+    if (demo) return DemoStore.instance.packageVolumes();
+    final data = await client.callMap(
+      api: 'SYNO.Core.Storage.Volume',
+      method: 'list',
+      version: 1,
+      params: {'limit': -1, 'offset': 0, 'location': 'internal'},
+    );
+    final list = (data['volumes'] as List?) ?? const [];
+    return list.whereType<Map>().map((e) => PackageVolume.fromJson(e.cast<String, dynamic>())).where((v) => v.path.isNotEmpty).toList();
+  }
+
+  Future<String> installPackage(String id, String volumePath, {bool beta = false}) async {
+    if (demo) {
+      DemoStore.instance.installPackage(id, volumePath);
+      return 'demo-task';
+    }
+    final data = await client.callPostMap(
+      api: 'SYNO.Core.Package.Installation',
+      method: 'install',
+      version: 1,
+      params: {
+        'name': id,
+        'volume_path': volumePath,
+        'is_syno': true,
+        'beta': beta,
+        'installrunpackage': true,
+        'blqinst': true,
+      },
+    );
+    final taskId = '${data['taskid'] ?? data['task_id'] ?? ''}';
+    if (taskId.isEmpty) throw const DsmException(-1, '安装任务创建失败，请确认账号有管理员权限');
+    return taskId;
+  }
+
+  Future<Map<String, dynamic>> packageInstallStatus(String taskId) async {
+    if (demo) return {'finished': true, 'progress': 100};
+    return client.callMap(
+      api: 'SYNO.Core.Package.Installation',
+      method: 'status',
+      version: 1,
+      params: {'task_id': taskId},
+    );
+  }
+
+  Future<void> uninstallPackage(String id) async {
+    if (demo) {
+      DemoStore.instance.uninstallPackage(id);
+      return;
+    }
+    await client.callPostMap(
+      api: 'SYNO.Core.Package.Uninstallation',
+      method: 'uninstall',
+      version: 1,
+      params: {'id': id},
+    );
+  }
   Future<void> packageControl(String id, bool start) async {
     if (demo) return DemoStore.instance.packageControl(id, start);
     await client.callMap(
@@ -413,6 +493,10 @@ class DsmService {
       '${client.baseUrl}/webman/3rdparty/$encoded/images/icon_72.png',
       '${client.baseUrl}/webman/3rdparty/$encoded/images/icon_64.png',
       '${client.baseUrl}/webman/3rdparty/$encoded/images/icon_48.png',
+      '${client.baseUrl}/webman/3rdparty/$encoded/images/icon_128.png',
+      '${client.baseUrl}/webman/3rdparty/$encoded/images/icon.png',
+      '${client.baseUrl}/webman/3rdparty/$encoded/icon_72.png',
+      '${client.baseUrl}/webman/3rdparty/$encoded/ui/images/icon_72.png',
     ];
   }
 
@@ -642,20 +726,99 @@ class DsmService {
   }
 
   /// 选取一个 DSM 文件夹作为相册（只取图片文件）。
-  Future<List<PhotoItem>> folderPhotoItems(String path) async {
-    final entries = await files(path);
-    return entries
-        .where((e) => !e.isDir && e.kind == FileKind.image)
-        .map((e) => PhotoItem(
-              id: e.path,
-              name: e.name,
-              takenAt: e.mtime,
-              thumbUrl: demo ? '' : (thumbnailUri(e.path, size: 'small')?.toString() ?? ''),
-              originalUrl: demo ? '' : downloadUri(e.path, open: true).toString(),
-            ))
-        .toList();
+  final Map<String, String> _folderPhotoTasks = {};
+
+  /// 递归读取目录及子目录中的图片，分页返回；搜索任务在服务端缓存。
+  Future<List<PhotoItem>> folderPhotoPage(String path, {int offset = 0, int limit = 80}) async {
+    if (demo) {
+      final entries = await files(path);
+      return entries.where((e) => !e.isDir && e.kind == FileKind.image).map(_photoFromEntry).toList();
+    }
+    var taskId = _folderPhotoTasks[path];
+    if (taskId == null) {
+      final start = await client.callMap(
+        api: 'SYNO.FileStation.Search',
+        method: 'start',
+        version: 1,
+        params: {
+          'folder_path': path,
+          'recursive': true,
+          'extension': 'jpg,jpeg,png,gif,webp,bmp,heic,heif',
+        },
+      );
+      taskId = '${start['taskid'] ?? ''}';
+      if (taskId.isEmpty) throw const DsmException(-1, '无法开始读取该目录，请确认目录可访问');
+      _folderPhotoTasks[path] = taskId;
+    }
+    Map<String, dynamic> data = const {};
+    for (var attempt = 0; attempt < 5; attempt++) {
+      data = await client.callMap(
+        api: 'SYNO.FileStation.Search',
+        method: 'list',
+        version: 1,
+        params: {
+          'taskid': taskId,
+          'offset': offset,
+          'limit': limit,
+          'additional': ['size', 'time', 'type'],
+        },
+      );
+      final page = (data['files'] as List?) ?? const [];
+      if (page.isNotEmpty || data['finished'] == true) break;
+      await Future.delayed(const Duration(milliseconds: 350));
+    }
+    final photoMaps = (data['files'] as List?) ?? const [];
+    final items = photoMaps.whereType<Map>().map((raw) {
+      final map = raw.cast<String, dynamic>();
+      if (map['isdir'] == true) return null;
+      final additional = (map['additional'] as Map?)?.cast<String, dynamic>() ?? const {};
+      final time = (additional['time'] as Map?)?.cast<String, dynamic>() ?? const {};
+      final mtime = (time['mtime'] as num?)?.toInt();
+      final size = (additional['size'] as num?)?.toInt() ?? 0;
+      final filePath = '${map['path'] ?? ''}';
+      return PhotoItem(
+        id: filePath,
+        name: '${map['name'] ?? ''}',
+        takenAt: mtime == null ? null : DateTime.fromMillisecondsSinceEpoch(mtime * 1000),
+        createdAt: mtime == null ? null : DateTime.fromMillisecondsSinceEpoch(mtime * 1000),
+        size: size,
+        path: filePath,
+        thumbUrl: thumbnailUri(filePath, size: 'small')?.toString() ?? '',
+        originalUrl: downloadUri(filePath, open: true).toString(),
+      );
+    }).whereType<PhotoItem>().toList();
+    items.sort((a, b) => (b.takenAt ?? DateTime(0)).compareTo(a.takenAt ?? DateTime(0)));
+    return items;
   }
 
+  PhotoItem _photoFromEntry(FileEntry entry) => PhotoItem(
+        id: entry.path,
+        name: entry.name,
+        takenAt: entry.mtime,
+        createdAt: entry.mtime,
+        size: entry.size,
+        path: entry.path,
+        thumbUrl: demo ? '' : (thumbnailUri(entry.path, size: 'small')?.toString() ?? ''),
+        originalUrl: demo ? '' : downloadUri(entry.path, open: true).toString(),
+      );
+
+  void resetFolderPhotoTask(String path) {
+    _folderPhotoTasks.remove(path);
+  }
+
+  Future<Map<String, dynamic>> fileInfo(String path) async {
+    final data = await client.callMap(
+      api: 'SYNO.FileStation.List',
+      method: 'getinfo',
+      version: 2,
+      params: {
+        'path': [path],
+        'additional': ['size', 'time', 'type'],
+      },
+    );
+    final files = (data['files'] as List?) ?? const [];
+    return files.isNotEmpty && files.first is Map ? (files.first as Map).cast<String, dynamic>() : const {};
+  }
   /// 尝试从 DSM 获取当前登录用户的头像地址。
   Future<String?> avatarUrl(String account) async {
     if (demo) return null;

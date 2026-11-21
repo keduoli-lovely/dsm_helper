@@ -716,7 +716,7 @@ bool isLanAddress(String host) {
   return !host.contains(".");
 }
 
-enum DownloadToolType { dsm, qbittorrent, transmission }
+enum DownloadToolType { dsm, qbittorrent, transmission, aria2 }
 
 /// 用户配置的下载工具，可以是 DSM 自带的 Download Station，也可以是局域网里的 qBittorrent。
 class DownloadTool {
@@ -730,6 +730,7 @@ class DownloadTool {
   final String username;
   final String password;
   final String apiKey;
+  final String secret;
 
   const DownloadTool({
     required this.id,
@@ -742,6 +743,7 @@ class DownloadTool {
     this.username = '',
     this.password = '',
     this.apiKey = '',
+    this.secret = '',
   });
 
   String get baseUrl => '${https ? 'https' : 'http'}://$host:$port';
@@ -752,6 +754,7 @@ class DownloadTool {
       DownloadToolType.dsm => 'Download Station',
       DownloadToolType.qbittorrent => 'qBittorrent',
       DownloadToolType.transmission => 'Transmission',
+      DownloadToolType.aria2 => 'Aria2',
     };
   }
 
@@ -759,9 +762,10 @@ class DownloadTool {
         DownloadToolType.dsm => '群晖 Download Station',
         DownloadToolType.qbittorrent => 'qBittorrent',
         DownloadToolType.transmission => 'Transmission',
+        DownloadToolType.aria2 => 'Aria2',
       };
 
-  DownloadTool copyWith({String? name, String? host, String? port, bool? https, String? username, String? password, String? apiKey}) => DownloadTool(
+  DownloadTool copyWith({String? name, String? host, String? port, bool? https, String? username, String? password, String? apiKey, String? secret}) => DownloadTool(
         id: id,
         type: type,
         name: name ?? this.name,
@@ -772,6 +776,7 @@ class DownloadTool {
         username: username ?? this.username,
         password: password ?? this.password,
         apiKey: apiKey ?? this.apiKey,
+        secret: secret ?? this.secret,
       );
 
   Map<String, dynamic> toJson() => {
@@ -785,6 +790,7 @@ class DownloadTool {
         'username': username,
         'password': password,
         'api_key': apiKey,
+        'secret': secret,
       };
 
   factory DownloadTool.fromJson(Map<String, dynamic> json) => DownloadTool(
@@ -798,6 +804,7 @@ class DownloadTool {
         username: _asString(json['username']),
         password: _asString(json['password']),
         apiKey: _asString(json['api_key']),
+        secret: _asString(json['secret']),
       );
 }
 
@@ -856,6 +863,9 @@ class PhotoItem {
   final String id;
   final String name;
   final DateTime? takenAt;
+  final DateTime? createdAt;
+  final int size;
+  final String path;
   final String thumbUrl;
   final String originalUrl;
   final Map<String, String> headers;
@@ -864,6 +874,9 @@ class PhotoItem {
     required this.id,
     required this.name,
     this.takenAt,
+    this.createdAt,
+    this.size = 0,
+    this.path = '',
     this.thumbUrl = '',
     this.originalUrl = '',
     this.headers = const {},
@@ -872,6 +885,49 @@ class PhotoItem {
 
 /// 首页可自由开关的卡片。
 enum HomeWidgetType { resource, storage, transfers, overview, network, disks, recentFiles, quickActions, photos, packages, logs, docker }
+
+class CatalogPackage {
+  final String id;
+  final String name;
+  final String version;
+  final String description;
+  final String category;
+  final bool beta;
+
+  const CatalogPackage({
+    required this.id,
+    required this.name,
+    this.version = '',
+    this.description = '',
+    this.category = '',
+    this.beta = false,
+  });
+
+  factory CatalogPackage.fromJson(Map<String, dynamic> d) => CatalogPackage(
+        id: _asString(d['id'] ?? d['package']),
+        name: _asString(d['dname'] ?? d['name'] ?? d['id']),
+        version: _asString(d['version']),
+        description: _asString(d['desc'] ?? d['description']),
+        category: _asString(d['category'] ?? d['type']),
+        beta: d['beta'] == true,
+      );
+}
+
+class PackageVolume {
+  final String path;
+  final String name;
+  final int freeBytes;
+  final String fsType;
+
+  const PackageVolume({required this.path, required this.name, this.freeBytes = 0, this.fsType = ''});
+
+  factory PackageVolume.fromJson(Map<String, dynamic> d) => PackageVolume(
+        path: _asString(d['volume_path'] ?? d['path']),
+        name: _asString(d['display_name'] ?? d['desc'] ?? d['volume_path']),
+        freeBytes: (d['size_free_byte'] as num?)?.toInt() ?? 0,
+        fsType: _asString(d['fs_type']),
+      );
+}
 
 class SharedLink {
   final String id;

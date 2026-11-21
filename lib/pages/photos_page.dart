@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:provider/provider.dart';
 
 import '../dsm/dsm_client.dart';
@@ -82,7 +84,7 @@ class _PhotosPageState extends State<PhotosPage> {
       setState(() {
         _items.addAll(fetched.where((e) => _items.every((old) => old.id != e.id)));
         _items.sort((a, b) => (b.takenAt ?? DateTime(0)).compareTo(a.takenAt ?? DateTime(0)));
-        _hasMore = source.type == PhotoSourceType.folder ? false : fetched.length >= _pageSize;
+        _hasMore = fetched.length >= _pageSize;
         _loading = false;
         _loadingMore = false;
         _error = null;
@@ -111,10 +113,9 @@ class _PhotosPageState extends State<PhotosPage> {
       case PhotoSourceType.none:
         return const [];
       case PhotoSourceType.folder:
-        if (offset > 0) return const [];
         if (service == null) throw const DsmException(-1, '未连接群晖设备');
         if (source.folderPath.isEmpty) throw const DsmException(-1, '还没有选择相册目录');
-        return service.folderPhotoItems(source.folderPath);
+        return service.folderPhotoPage(source.folderPath, offset: offset, limit: _pageSize);
       case PhotoSourceType.synologyPhotos:
         if (service == null) throw const DsmException(-1, '未连接群晖设备');
         return service.synologyPhotoItems(offset: offset, limit: _pageSize);
@@ -144,7 +145,9 @@ class _PhotosPageState extends State<PhotosPage> {
           subtitle: state.photoSource.type == PhotoSourceType.folder ? '当前：${state.photoSource.folderPath}' : '从共享文件夹读取图片',
           onTap: () async {
             Navigator.pop(context);
-            final path = await Navigator.of(context).push<String>(appRoute(const FolderPickerPage(initialPath: '/')));
+            final current = context.read<AppState>().photoSource;
+            final startPath = current.type == PhotoSourceType.folder && current.folderPath.isNotEmpty ? current.folderPath : '/';
+            final path = await Navigator.of(context).push<String>(appRoute(FolderPickerPage(initialPath: startPath)));
             if (path == null || !mounted) return;
             await state.setPhotoSource(PhotoSource(type: PhotoSourceType.folder, folderPath: path));
             _immich?.dispose();
@@ -304,7 +307,9 @@ class _PhotosPageState extends State<PhotosPage> {
           title: '选择 DSM 文件夹',
           subtitle: '从共享文件夹读取图片，没有 photo 文件夹也可以选别的',
           onTap: () async {
-            final path = await Navigator.of(context).push<String>(appRoute(const FolderPickerPage(initialPath: '/')));
+            final current = context.read<AppState>().photoSource;
+            final startPath = current.type == PhotoSourceType.folder && current.folderPath.isNotEmpty ? current.folderPath : '/';
+            final path = await Navigator.of(context).push<String>(appRoute(FolderPickerPage(initialPath: startPath)));
             if (path == null || !mounted) return;
             await context.read<AppState>().setPhotoSource(PhotoSource(type: PhotoSourceType.folder, folderPath: path));
             await _load(reset: true);
@@ -468,9 +473,126 @@ class _PhotoTile extends StatelessWidget {
   }
 }
 
-class _PhotoViewerPage extends StatelessWidget {
+class _PhotoViewerPage extends StatefulWidget {
   final PhotoItem item;
   const _PhotoViewerPage({required this.item});
+
+  @override
+  State<_PhotoViewerPage> createState() => _PhotoViewerPageState();
+}
+
+class _PhotoViewerPageState extends State<_PhotoViewerPage> {
+  Map<String, dynamic>? _fileInfo;
+
+  PhotoItem get item => widget.item;
+
+  @override
+  void initState() {
+    super.initState();
+    if (item.path.isNotEmpty) _loadInfo();
+  }
+
+  Future<void> _loadInfo() async {
+    final service = context.read<AppState>().service;
+    if (service == null) return;
+    try {
+      final info = await service.fileInfo(item.path);
+      if (mounted) setState(() => _fileInfo = info);
+    } catch (_) {}
+  }
+
+  Future<void> _showDetails() async {
+    final c = context.colors;
+    final info = _fileInfo;
+    final additional = (info?['additional'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final time = (additional['time'] as Map?)?.cast<String, dynamic>() ?? const {};
+    final mtime = (time['mtime'] as num?)?.toInt();
+    final size = (additional['size'] as num?)?.toInt() ?? item.size;
+    final date = mtime != null ? DateTime.fromMillisecondsSinceEpoch(mtime * 1000) : (item.takenAt ?? item.createdAt);
+    String fmt(DateTime? value) => value == null ? '未知' : '${value.year}-${value.month.toString().padLeft(2, '0')}-${value.day.toString().padLeft(2, '0')} ${value.hour.toString().padLeft(2, '0')}:${value.minute.toString().padLeft(2, '0')}';
+    await showAppSheet(
+      context,
+      title: '图片详情',
+      subtitle: item.name,
+      children: [
+        SoftCard(
+          shadow: false,
+          color: c.surfaceAlt,
+          child: Column(
+            children: [
+              _detailRow('文件名', item.name),
+              _detailRow('大小', size > 0 ? formatBytes(size) : '未知'),
+              _detailRow('时间', fmt(date)),
+              _detailRow('路径', item.path.isEmpty ? '相册索引（无本地路径）' : item.path),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _detailRow(String label, String value) {
+    final c = context.colors;
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 7),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(width: 52, child: Text(label, style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 11))),
+          Expanded(child: SelectableText(value, style: context.texts.bodySmall?.copyWith(color: c.textPrimary, fontSize: 12, height: 1.4))),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _share() async {
+    final service = context.read<AppState>().service;
+    if (service == null || item.path.isEmpty) {
+      showToast(context, '这张图片没有可分享的 DSM 路径', icon: Icons.info_outline_rounded);
+      return;
+    }
+    try {
+      final link = await service.createSharingLink(item.path);
+      if (!mounted) return;
+      await showAppSheet(
+        context,
+        title: '共享链接已创建',
+        subtitle: item.name,
+        children: [
+          SoftCard(
+            shadow: false,
+            color: context.colors.surfaceAlt,
+            child: SelectableText(link.url, style: context.texts.bodySmall?.copyWith(color: context.colors.textPrimary, height: 1.5)),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(
+                child: OutlinedButton.icon(
+                  onPressed: () async {
+                    await Clipboard.setData(ClipboardData(text: link.url));
+                    if (mounted) showToast(context, '链接已复制');
+                  },
+                  icon: const Icon(Icons.copy_rounded, size: 18),
+                  label: const Text('复制链接'),
+                ),
+              ),
+              const SizedBox(width: 10),
+              Expanded(
+                child: FilledButton.icon(
+                  onPressed: () => launchUrl(Uri.parse(link.url), mode: LaunchMode.externalApplication),
+                  icon: const Icon(Icons.open_in_new_rounded, size: 18),
+                  label: const Text('打开链接'),
+                ),
+              ),
+            ],
+          ),
+        ],
+      );
+    } on DsmException catch (e) {
+      if (mounted) showToast(context, e.message, icon: Icons.error_outline_rounded);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -507,6 +629,11 @@ class _PhotoViewerPage extends StatelessWidget {
                       ],
                     ),
                   ),
+                  _viewerAction(Icons.info_outline_rounded, _showDetails),
+                  if (item.path.isNotEmpty) ...[
+                    const SizedBox(width: 8),
+                    _viewerAction(Icons.share_rounded, _share),
+                  ],
                 ],
               ),
             ),
@@ -537,8 +664,19 @@ class _PhotoViewerPage extends StatelessWidget {
       ),
     );
   }
-}
 
+  Widget _viewerAction(IconData icon, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 38,
+        height: 38,
+        decoration: BoxDecoration(color: Colors.white.withValues(alpha: 0.12), borderRadius: BorderRadius.circular(13)),
+        child: Icon(icon, size: 18, color: Colors.white),
+      ),
+    );
+  }
+}
 class _ImmichDialog extends StatefulWidget {
   final PhotoSource initial;
   const _ImmichDialog({required this.initial});

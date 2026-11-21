@@ -6,6 +6,7 @@ import 'package:http/io_client.dart';
 
 import '../dsm/dsm_client.dart';
 import '../dsm/dsm_service.dart';
+import '../demo/demo_store.dart';
 import '../dsm/models.dart';
 
 /// 下载工具的统一接口：DSM Download Station / qBittorrent / Transmission。
@@ -26,7 +27,32 @@ DownloadAdapter adapterFor(DownloadTool tool, DsmService? service) {
       return QbittorrentAdapter(tool);
     case DownloadToolType.transmission:
       return TransmissionAdapter(tool);
+    case DownloadToolType.aria2:
+      return Aria2Adapter(tool);
   }
+}
+
+class DemoDownloadAdapter implements DownloadAdapter {
+  final DemoStore _store = DemoStore.instance;
+
+  @override
+  Future<void> testConnection() async {}
+
+  @override
+  Future<List<DownloadTask>> list() async => _store.downloads();
+
+  @override
+  Future<void> add(String uri) async => _store.addDownload(uri);
+
+  @override
+  Future<void> action(String action, List<String> ids) async {
+    for (final id in ids) {
+      _store.downloadAction(action, id);
+    }
+  }
+
+  @override
+  void dispose() {}
 }
 
 class DsmDownloadAdapter implements DownloadAdapter {
@@ -82,7 +108,8 @@ class QbittorrentAdapter implements DownloadAdapter {
           body: {'username': tool.username, 'password': tool.password},
         )
         .timeout(const Duration(seconds: 8));
-    if (response.statusCode != 200 || response.body.trim().toLowerCase() != 'ok.') {
+    final success = (response.statusCode == 200 || response.statusCode == 204) && (response.body.trim().isEmpty || response.body.trim().toLowerCase() == 'ok.');
+    if (!success) {
       throw const DsmException(-1, 'qBittorrent 登录失败：请检查账号密码（或使用 API Key）');
     }
     final cookie = response.headers['set-cookie'];
@@ -183,6 +210,120 @@ class QbittorrentAdapter implements DownloadAdapter {
   void dispose() => _http.close();
 }
 
+class Aria2Adapter implements DownloadAdapter {
+  final DownloadTool tool;
+  late final http.Client _http = _clientFor(tool);
+  int _id = 0;
+
+  Aria2Adapter(this.tool);
+
+  Uri get _uri => Uri.parse('${tool.baseUrl}/jsonrpc');
+
+  List<dynamic> get _token => tool.secret.isEmpty ? const [] : ['token:${tool.secret}'];
+
+  Future<dynamic> _rpc(String method, [List<dynamic> params = const []]) async {
+    final body = jsonEncode({
+      'jsonrpc': '2.0',
+      'id': '${++_id}',
+      'method': method,
+      'params': [..._token, ...params],
+    });
+    try {
+      final response = await _http
+          .post(_uri, headers: {'Content-Type': 'application/json'}, body: body)
+          .timeout(const Duration(seconds: 10));
+      if (response.statusCode != 200) {
+        throw DsmException(-1, response.statusCode == 401 ? 'Aria2 RPC 认证失败，请检查 Secret' : 'Aria2 连接失败（HTTP ${response.statusCode}）');
+      }
+      final data = jsonDecode(utf8.decode(response.bodyBytes));
+      if (data is! Map) throw const DsmException(-1, 'Aria2 返回格式异常');
+      if (data['error'] != null) {
+        final error = data['error'];
+        throw DsmException(-1, 'Aria2 错误：${error is Map ? error['message'] : error}');
+      }
+      return data['result'];
+    } on TimeoutException {
+      throw const DsmException(-1, '连接 Aria2 超时，请检查地址、端口与 RPC 设置');
+    } on http.ClientException {
+      throw const DsmException(-1, '无法连接到 Aria2，请确认已开启 RPC 并允许远程连接');
+    }
+  }
+
+  @override
+  Future<void> testConnection() async {
+    await _rpc('aria2.getVersion');
+  }
+
+  @override
+  Future<List<DownloadTask>> list() async {
+    final results = await Future.wait([
+      _rpc('aria2.tellActive'),
+      _rpc('aria2.tellWaiting', [0, 100]),
+      _rpc('aria2.tellStopped', [0, 100]),
+    ]);
+    final tasks = <DownloadTask>[];
+    for (final result in results) {
+      if (result is! List) continue;
+      for (final raw in result.whereType<Map>()) {
+        tasks.add(_taskFrom(raw));
+      }
+    }
+    return tasks;
+  }
+
+  DownloadTask _taskFrom(Map raw) {
+    final map = raw.cast<String, dynamic>();
+    final files = (map['files'] as List?) ?? const [];
+    final first = files.isNotEmpty && files.first is Map ? files.first as Map : const {};
+    final info = (map['bittorrent'] is Map ? (map['bittorrent'] as Map)['info'] : null) as Map?;
+    final path = '${first['path'] ?? ''}';
+    final name = path.isNotEmpty ? path.split('/').last : '${info?['name'] ?? map['gid'] ?? '未命名任务'}';
+    final total = int.tryParse('${map['totalLength'] ?? 0}') ?? 0;
+    final completed = int.tryParse('${map['completedLength'] ?? 0}') ?? 0;
+    final speed = int.tryParse('${map['downloadSpeed'] ?? 0}') ?? 0;
+    final status = '${map['status'] ?? ''}';
+    return DownloadTask(
+      id: '${map['gid'] ?? ''}',
+      title: name,
+      status: _statusFor(status, '${map['seeder'] ?? ''}'),
+      size: total,
+      downloaded: completed,
+      speedDownload: speed,
+      destination: '${map['dir'] ?? ''}',
+    );
+  }
+
+  String _statusFor(String status, String seeder) {
+    if (status == 'active') return 'downloading';
+    if (status == 'waiting') return 'waiting';
+    if (status == 'paused') return 'paused';
+    if (status == 'complete') return seeder == 'true' ? 'seeding' : 'finished';
+    if (status == 'error') return 'error';
+    if (status == 'removed') return 'finished';
+    return 'waiting';
+  }
+
+  @override
+  Future<void> add(String uri) async {
+    await _rpc('aria2.addUri', [uri]);
+  }
+
+  @override
+  Future<void> action(String action, List<String> ids) async {
+    for (final id in ids) {
+      if (action == 'pause') {
+        await _rpc('aria2.forcePause', [id]);
+      } else if (action == 'resume') {
+        await _rpc('aria2.unpause', [id]);
+      } else if (action == 'delete') {
+        await _rpc('aria2.forceRemove', [id]);
+      }
+    }
+  }
+
+  @override
+  void dispose() => _http.close();
+}
 class TransmissionAdapter implements DownloadAdapter {
   final DownloadTool tool;
   late final http.Client _http = _clientFor(tool);
@@ -277,29 +418,14 @@ class TransmissionAdapter implements DownloadAdapter {
   void dispose() => _http.close();
 }
 
-/// 局域网下载工具发现：DSM Download Station、qBittorrent、Transmission。
+/// 局域网下载工具发现：qBittorrent、Aria2。
 class DownloadDiscovery {
   static Future<List<DownloadTool>> scan({DsmService? service, String host = '', bool trustSelfSigned = true}) async {
     final found = <DownloadTool>[];
-    if (service != null && !service.demo) {
-      try {
-        await service.downloads();
-        found.add(DownloadTool(
-          id: 'dsm-${service.server.host}-${service.server.port}',
-          type: DownloadToolType.dsm,
-          name: 'Download Station',
-          host: service.server.host,
-          port: service.server.port,
-          https: service.server.https,
-        ));
-      } catch (_) {}
-    }
-
     final candidates = <Future<DownloadTool?>>[
       _probeQb(host, 8080, trustSelfSigned),
       _probeQb(host, 8081, trustSelfSigned),
-      _probeQb(host, 8090, trustSelfSigned),
-      _probeTransmission(host, 9091, trustSelfSigned),
+      _probeAria2(host, 6800, trustSelfSigned),
     ];
     for (final result in await Future.wait(candidates)) {
       if (result != null) found.add(result);
@@ -322,6 +448,27 @@ class DownloadDiscovery {
           host: host,
           port: '$port',
         );
+      }
+    } catch (_) {
+    } finally {
+      client.close();
+    }
+    return null;
+  }
+
+  static Future<DownloadTool?> _probeAria2(String host, int port, bool trustSelfSigned) async {
+    if (host.isEmpty) return null;
+    final client = trustSelfSigned ? IOClient(DsmClient.trustAllHttpClient()) : http.Client();
+    try {
+      final response = await client
+          .post(
+            Uri.parse('http://$host:$port/jsonrpc'),
+            headers: {'Content-Type': 'application/json'},
+            body: jsonEncode({'jsonrpc': '2.0', 'id': 'probe', 'method': 'aria2.getVersion', 'params': []}),
+          )
+          .timeout(const Duration(milliseconds: 1200));
+      if (response.statusCode == 200 && jsonDecode(response.body)['result'] != null) {
+        return DownloadTool(id: 'aria-$host-$port', type: DownloadToolType.aria2, name: 'Aria2', host: host, port: '$port');
       }
     } catch (_) {
     } finally {
