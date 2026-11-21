@@ -27,10 +27,11 @@ class DsmClient {
   final http.Client _http;
   String sid;
   String cookie;
+  String synoToken;
   void Function()? onAuthExpired;
   Map<String, int> _maxVersions = const {};
 
-  DsmClient({required this.server, this.sid = '', this.cookie = ''}) : _http = _buildClient(server);
+  DsmClient({required this.server, this.sid = '', this.cookie = '', this.synoToken = ''}) : _http = _buildClient(server);
 
   static http.Client _buildClient(DsmServer server) {
     if (!server.https || !server.trustSelfSigned) {
@@ -78,6 +79,7 @@ class DsmClient {
         'Origin': server.baseUrl,
         'Referer': server.baseUrl,
         if (cookie.isNotEmpty) 'Cookie': cookie,
+        if (synoToken.isNotEmpty) 'X-SYNO-TOKEN': synoToken,
       };
 
   bool get connected => sid.isNotEmpty;
@@ -98,9 +100,11 @@ class DsmClient {
       'session': 'webui',
       'format': 'sid',
       'enable_device_token': rememberDevice ? 'yes' : 'no',
+      'enable_syno_token': 'yes',
     });
     final result = (data['data'] as Map?)?.cast<String, dynamic>() ?? const {};
     sid = (result['sid'] ?? '').toString();
+    synoToken = (result['synotoken'] ?? '').toString();
     if (sid.isEmpty) {
       throw const DsmException(500, '登录失败：未获取到会话，请检查地址与端口');
     }
@@ -254,6 +258,7 @@ class DsmClient {
       'version': '2',
       if (sid.isNotEmpty) '_sid': sid,
       'path': destDir,
+      'dest_path': destDir,
       'create_parents': 'true',
       'overwrite': 'true',
     });
@@ -264,6 +269,7 @@ class DsmClient {
       'version': '2',
       if (sid.isNotEmpty) '_sid': sid,
       'path': destDir,
+      'dest_path': destDir,
       'create_parents': 'true',
       'overwrite': 'true',
     });
@@ -282,7 +288,14 @@ class DsmClient {
       final json = jsonDecode(text.replaceFirst('\uFEFF', ''));
       if (json is! Map || json['success'] != true) {
         final code = ((json is Map ? json['error'] : null) as Map?)?['code'];
-        throw DsmException((code as num?)?.toInt() ?? -5, '上传失败（${code ?? '未知错误'}）');
+        final numeric = (code as num?)?.toInt() ?? -5;
+        final message = switch (numeric) {
+          401 => '上传失败：目标目录不可写或没有权限（401）',
+          402 => '上传失败：文件名无效或目标已存在（402）',
+          403 => '上传失败：目标目录不存在或无法创建（403）',
+          _ => '上传失败（${code ?? '未知错误'}）',
+        };
+        throw DsmException(numeric, message);
       }
     } on DsmException {
       rethrow;
