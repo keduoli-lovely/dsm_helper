@@ -207,6 +207,7 @@ class _DockerPageState extends State<DockerPage> {
             ],
           ),
         ),
+        const SizedBox(height: 12),
         Row(
           children: [
             Expanded(child: TextField(controller: hostPort, keyboardType: TextInputType.number, decoration: const InputDecoration(hintText: '主机端口'))),
