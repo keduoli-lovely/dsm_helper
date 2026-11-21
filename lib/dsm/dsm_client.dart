@@ -255,13 +255,19 @@ class DsmClient {
     final uri = _webapi.replace(path: '${_webapi.path}entry.cgi', queryParameters: {
       'api': 'SYNO.FileStation.Upload',
       'method': 'upload',
-      'version': '2',
+      'version': '1',
       if (sid.isNotEmpty) '_sid': sid,
       if (synoToken.isNotEmpty) 'SynoToken': synoToken,
     });
-    final request = http.MultipartRequest('POST', uri)..headers.addAll(_headers);
+    final request = http.MultipartRequest('POST', uri)
+      ..headers.addAll({
+        'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
+        if (cookie.isNotEmpty) 'Cookie': cookie,
+        if (synoToken.isNotEmpty) 'X-SYNO-TOKEN': synoToken,
+      });
     request.fields.addAll({
       'path': destDir,
+      'dest_path': destDir,
       'create_parents': 'true',
       'overwrite': 'true',
     });
@@ -282,7 +288,7 @@ class DsmClient {
         final code = ((json is Map ? json['error'] : null) as Map?)?['code'];
         final numeric = (code as num?)?.toInt() ?? -5;
         final message = switch (numeric) {
-          401 => '上传失败（401）：目标目录不可写或没有权限；会话 token=${synoToken.length}, sid=${sid.length}。若 token=0 请重新登录',
+          401 => '上传失败（401）：HTTP ${response.statusCode}，目标目录不可写或参数被拒绝；token=${synoToken.length}, sid=${sid.length}',
           402 => '上传失败：文件名无效或目标已存在（402）',
           403 => '上传失败：目标目录不存在或无法创建（403）',
           _ => '上传失败（${code ?? '未知错误'}）',
