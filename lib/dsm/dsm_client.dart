@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:http/http.dart' as http;
+import 'package:dio/dio.dart';
+import 'package:dio/io.dart';
 import 'package:http/io_client.dart';
 
 import 'models.dart';
@@ -245,6 +247,7 @@ class DsmClient {
   }
 
   /// 以流的方式上传（兼容 Android 内容 URI）。
+  /// 使用 Dio 构造 multipart：DSM 的解析器要求 Content-Disposition 在 Content-Type 之前。
   Future<void> uploadStream({
     required String filename,
     required Stream<List<int>> stream,
@@ -252,55 +255,104 @@ class DsmClient {
     required String destDir,
     void Function(int sent, int total)? onProgress,
   }) async {
-    final uri = _webapi.replace(path: '${_webapi.path}entry.cgi', queryParameters: {
-      'api': 'SYNO.FileStation.Upload',
-      'method': 'upload',
-      'version': '3',
-      if (sid.isNotEmpty) '_sid': sid,
-    });
-    final request = http.MultipartRequest('POST', uri)
-      ..headers.addAll({
-        if (cookie.isNotEmpty) 'Cookie': cookie,
-        if (synoToken.isNotEmpty) 'X-SYNO-TOKEN': synoToken,
-      });
-    request.fields.addAll({
-      if (sid.isNotEmpty) '_sid': sid,
-      'path': destDir,
-      'create_parents': 'false',
-      'overwrite': 'overwrite',
-    });
-    var sent = 0;
-    final tracked = stream.map((chunk) {
-      sent += chunk.length;
-      onProgress?.call(sent, length);
-      return chunk;
-    });
     final safeName = filename.replaceAll('+', '_').replaceAll(RegExp(r'[\\/:*?"<>|]'), '_');
-    request.files.add(http.MultipartFile('filepart', tracked, length, filename: safeName));
+    final ext = safeName.split('.').last.toLowerCase();
+    final mediaType = switch (ext) {
+      'jpg' || 'jpeg' => 'image/jpeg',
+      'png' => 'image/png',
+      'gif' => 'image/gif',
+      'webp' => 'image/webp',
+      'heic' || 'heif' => 'image/heic',
+      'pdf' => 'application/pdf',
+      'mp4' => 'video/mp4',
+      _ => 'application/octet-stream',
+    };
+
+    final dio = Dio(BaseOptions(
+      baseUrl: server.baseUrl,
+      responseType: ResponseType.plain,
+      validateStatus: (_) => true,
+      connectTimeout: const Duration(seconds: 25),
+      receiveTimeout: const Duration(minutes: 30),
+      sendTimeout: const Duration(minutes: 30),
+    ));
+    (dio.httpClientAdapter as IOHttpClientAdapter).createHttpClient = () {
+      final httpClient = HttpClient();
+      httpClient.badCertificateCallback = (_, __, ___) => true;
+      return httpClient;
+    };
+
+    final form = FormData();
+    form.fields.add(MapEntry('path', destDir));
+    form.fields.add(const MapEntry('create_parents', 'false'));
+    form.fields.add(const MapEntry('overwrite', 'overwrite'));
+    form.files.add(MapEntry(
+      'filepart',
+      MultipartFile.fromStream(
+        () => stream,
+        length,
+        filename: safeName,
+        contentType: DioMediaType.parse(mediaType),
+      ),
+    ));
+
+    final headers = <String, dynamic>{
+      if (cookie.isNotEmpty) 'Cookie': cookie,
+      if (synoToken.isNotEmpty) 'X-SYNO-TOKEN': synoToken,
+    };
+
+    final response = await dio.post(
+      '/webapi/entry.cgi',
+      queryParameters: {
+        'api': 'SYNO.FileStation.Upload',
+        'version': '3',
+        'method': 'upload',
+        if (sid.isNotEmpty) '_sid': sid,
+      },
+      data: form,
+      options: Options(headers: headers),
+      onSendProgress: (sent, total) {
+        onProgress?.call(sent, total > 0 ? total : length);
+      },
+    );
+
+    final text = '${response.data ?? ''}';
+    dynamic json;
     try {
-      final streamed = await _http.send(request).timeout(const Duration(minutes: 30));
-      final response = await http.Response.fromStream(streamed);
-      _captureCookies(response);
-      final text = utf8.decode(response.bodyBytes);
-      final json = jsonDecode(text.replaceFirst('\uFEFF', ''));
-      if (json is! Map || json['success'] != true) {
-        final code = ((json is Map ? json['error'] : null) as Map?)?['code'];
-        final numeric = (code as num?)?.toInt() ?? -5;
-        final message = switch (numeric) {
-          401 => '上传失败（401）：HTTP ${response.statusCode}，目标目录不可写或参数被拒绝；token=${synoToken.length}, sid=${sid.length}',
-          402 => '上传失败：文件名无效或目标已存在（402）',
-          403 => '上传失败：目标目录不存在或无法创建（403）',
-          _ => '上传失败（${code ?? '未知错误'}）',
-        };
-        throw DsmException(numeric, message);
-      }
-    } on DsmException {
-      rethrow;
-    } catch (e) {
-      throw DsmException(-5, '上传失败：$e');
+      json = jsonDecode(text.replaceFirst('\uFEFF', ''));
+    } catch (_) {
+      throw DsmException(response.statusCode ?? -1, '上传失败：服务器返回非 JSON（HTTP ${response.statusCode}）');
     }
+    if (json is! Map || json['success'] != true) {
+      final code = ((json is Map ? json['error'] : null) as Map?)?['code'];
+      final numeric = (code as num?)?.toInt() ?? -5;
+      final message = switch (numeric) {
+        401 => '上传失败（401）：HTTP ${response.statusCode}，目标目录不可写或参数被拒绝；token=${synoToken.length}, sid=${sid.length}',
+        402 => '上传失败：文件名无效或目标已存在（402）',
+        403 => '上传失败：目标目录不存在或无法创建（403）',
+        _ => '上传失败（${code ?? '未知错误'}）',
+      };
+      throw DsmException(numeric, message);
+    }
+    _captureCookiesFromHeaders(response.headers);
   }
 
+  void _captureCookiesFromHeaders(Headers headers) {
+    final raw = headers.value('set-cookie');
+    if (raw == null || raw.isEmpty) return;
+    final found = <String, String>{};
+    for (final name in ['did', 'id']) {
+      final match = RegExp('(?:^|[;,\\s])$name=([^;,\\s]+)').firstMatch(raw);
+      final value = match?.group(1);
+      if (value != null && value.isNotEmpty) found[name] = value;
+    }
+    final parts = cookie.isEmpty ? <String>[] : cookie.split('; ');
+    found.forEach((name, value) {
+      parts.removeWhere((e) => e.startsWith('$name='));
+      parts.add('$name=$value');
+    });
+    cookie = parts.join('; ');
+  }
   Uri downloadUri(String path, {bool open = false}) {
     return _webapi.replace(path: '${_webapi.path}entry.cgi', queryParameters: {
       'api': 'SYNO.FileStation.Download',
