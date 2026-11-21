@@ -8,7 +8,6 @@ import '../dsm/models.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/feedback.dart';
-import '../widgets/nas_device.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/ui_kit.dart';
 
@@ -332,32 +331,6 @@ class _LoginPageState extends State<LoginPage> {
                         onTap: () => _fill(server),
                       ),
                     ),
-                ] else ...[
-                  const SizedBox(height: 22),
-                  SoftCard(
-                    padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
-                    shadow: false,
-                    color: c.surface.withValues(alpha: 0.72),
-                    child: Row(
-                      children: [
-                        const NasDevice(width: 58),
-                        const SizedBox(width: 16),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('为黑群晖与官方设备设计', style: context.texts.titleSmall?.copyWith(fontSize: 13.5)),
-                              const SizedBox(height: 4),
-                              Text(
-                                'DSM 6.x / 7.x · 官方 WebAPI · 局域网直连，不经过第三方服务器',
-                                style: context.texts.labelSmall?.copyWith(color: c.textTertiary, height: 1.6),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
                 const SizedBox(height: 18),
                 Row(

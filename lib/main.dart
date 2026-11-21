@@ -24,6 +24,7 @@ class DsmHelperApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
+    AppColors.accentOverride = state.accentColor;
     return MaterialApp(
       title: '群晖助手',
       debugShowCheckedModeBanner: false,

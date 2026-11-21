@@ -53,6 +53,37 @@ class AppColors {
     required this.border,
   });
 
+  static Color? accentOverride;
+
+  AppColors withAccent(Color? color) {
+    if (color == null) return this;
+    final deep = Color.lerp(color, Colors.black, 0.18)!;
+    return AppColors(
+      isDark: isDark,
+      bgTop: bgTop,
+      bgMid: bgMid,
+      bgBottom: bgBottom,
+      surface: surface,
+      surfaceAlt: surfaceAlt,
+      surfaceSunken: surfaceSunken,
+      primary: color,
+      primaryDeep: deep,
+      onPrimary: Colors.white,
+      mint: mint,
+      orange: orange,
+      pink: pink,
+      purple: purple,
+      sky: sky,
+      textPrimary: textPrimary,
+      textSecondary: textSecondary,
+      textTertiary: textTertiary,
+      success: success,
+      warning: warning,
+      danger: danger,
+      border: border,
+    );
+  }
+
   static const AppColors light = AppColors(
     isDark: false,
     bgTop: Color(0xFFE7ECFB),
@@ -103,8 +134,10 @@ class AppColors {
     border: Color(0xFF262C3A),
   );
 
-  static AppColors of(BuildContext context) =>
-      Theme.of(context).brightness == Brightness.dark ? dark : light;
+  static AppColors of(BuildContext context) {
+    final base = Theme.of(context).brightness == Brightness.dark ? dark : light;
+    return base.withAccent(accentOverride);
+  }
 
   List<BoxShadow> get cardShadow => isDark
       ? const [
@@ -272,9 +305,9 @@ class AppTheme {
     );
   }
 
-  static ThemeData light() => build(AppColors.light);
+  static ThemeData light() => build(AppColors.light.withAccent(AppColors.accentOverride));
 
-  static ThemeData dark() => build(AppColors.dark);
+  static ThemeData dark() => build(AppColors.dark.withAccent(AppColors.accentOverride));
 }
 
 /// 让 `Theme` 之外也能方便拿到设计色板的小扩展。

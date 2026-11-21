@@ -397,10 +397,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
   Widget build(BuildContext context) {
     final state = context.watch<AppState>();
     final c = context.colors;
-    final tool = state.activeTool;
     final visible = _visible;
-    final activeCount = _tasks.where((t) => t.isActive).length;
-    final speed = _tasks.where((t) => t.isActive).fold<double>(0, (sum, t) => sum + t.speedDownload);
     final noTools = state.downloadTools.isEmpty;
 
     return Scaffold(
@@ -417,21 +414,8 @@ class _DownloadsPageState extends State<DownloadsPage> {
                         Entrance(
                           index: 0,
                           child: Row(
-                            crossAxisAlignment: CrossAxisAlignment.end,
                             children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Text('下载', style: context.texts.displayMedium),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      _tasks.isEmpty ? '${tool?.label ?? ''} 任务' : '$activeCount 个进行中 · ${formatSpeed(speed)}',
-                                      style: context.texts.bodySmall?.copyWith(color: c.textTertiary, fontSize: 12.5),
-                                    ),
-                                  ],
-                                ),
-                              ),
+                              const Spacer(),
                               _refreshing
                                   ? const SizedBox(width: 38, height: 38, child: Padding(padding: EdgeInsets.all(9), child: CircularProgressIndicator(strokeWidth: 2.2)))
                                   : CircleIconButton(icon: Icons.refresh_rounded, onTap: _refresh, size: 18),
@@ -566,10 +550,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 132),
       children: [
-        Text('下载', style: context.texts.displayMedium),
-        const SizedBox(height: 6),
-        Text('连接一个下载工具后即可管理任务', style: context.texts.bodySmall?.copyWith(color: c.textTertiary, fontSize: 12.5)),
-        const SizedBox(height: 60),
+        const SizedBox(height: 50),
         Center(
           child: Column(
             children: [

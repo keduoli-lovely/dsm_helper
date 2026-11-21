@@ -185,7 +185,6 @@ class _AppsPageState extends State<AppsPage> {
   Widget build(BuildContext context) {
     final c = context.colors;
     final state = context.watch<AppState>();
-    final running = _packages.where((p) => p.isRunning).length;
     final visible = _visible;
     return Scaffold(
       backgroundColor: Colors.transparent,
@@ -199,21 +198,8 @@ class _AppsPageState extends State<AppsPage> {
                   Entrance(
                     index: 0,
                     child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('套件中心', style: context.texts.displayMedium),
-                              const SizedBox(height: 4),
-                              Text(
-                                _packages.isEmpty ? '管理已安装的套件' : '$running 个运行中 · 共 ${_packages.length} 个',
-                                style: context.texts.bodySmall?.copyWith(color: c.textTertiary, fontSize: 12.5),
-                              ),
-                            ],
-                          ),
-                        ),
                         _refreshing
                             ? const SizedBox(width: 42, height: 42, child: Padding(padding: EdgeInsets.all(11), child: CircularProgressIndicator(strokeWidth: 2.2)))
                             : IconButton(

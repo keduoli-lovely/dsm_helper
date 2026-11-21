@@ -24,6 +24,7 @@ class AppState extends ChangeNotifier {
   static const _kPhotoSource = 'photo_source_v2';
   static const _kAvatar = 'avatar_path_v2';
   static const _kCatalogCache = 'catalog_cache_v1';
+  static const _kAccent = 'accent_color_v2';
 
   BootPhase phase = BootPhase.booting;
   ThemeMode themeMode = ThemeMode.light;
@@ -52,6 +53,7 @@ class AppState extends ChangeNotifier {
   bool? online;
   String? customAvatarPath;
   List<CatalogPackage> catalogCache = [];
+  Color accentColor = const Color(0xFF6F86A8);
 
   static Future<AppState> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -102,6 +104,8 @@ class AppState extends ChangeNotifier {
       }
     }
     customAvatarPath = _prefs.getString(_kAvatar);
+    final accentValue = _prefs.getInt(_kAccent);
+    if (accentValue != null) accentColor = Color(accentValue);
     final rawCatalog = _prefs.getString(_kCatalogCache);
     if (rawCatalog != null && rawCatalog.isNotEmpty) {
       try {
@@ -312,6 +316,12 @@ class AppState extends ChangeNotifier {
       latencyMs = null;
     }
     if (notify) notifyListeners();
+  }
+
+  Future<void> setAccentColor(Color color) async {
+    accentColor = color;
+    await _prefs.setInt(_kAccent, color.toARGB32());
+    notifyListeners();
   }
 
   Future<void> saveCatalogCache(List<CatalogPackage> packages) async {

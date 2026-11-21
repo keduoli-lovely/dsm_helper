@@ -14,11 +14,9 @@ import '../widgets/feedback.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/user_avatar.dart';
 import '../widgets/ui_kit.dart';
-import 'logs_page.dart';
 import 'storage_page.dart';
 import 'system_page.dart';
 import 'tasks_page.dart';
-import 'users_page.dart';
 
 class SettingsPage extends StatefulWidget {
   const SettingsPage({super.key});
@@ -205,18 +203,6 @@ class _SettingsPageState extends State<SettingsPage> {
                       onTap: () => Navigator.of(context).push(appRoute(const SystemPage())),
                     ),
                     SettingRow(
-                      icon: Icons.group_rounded,
-                      title: '用户与权限',
-                      iconColor: const Color(0xFFFF6E93),
-                      onTap: () => Navigator.of(context).push(appRoute(const UsersPage())),
-                    ),
-                    SettingRow(
-                      icon: Icons.receipt_long_rounded,
-                      title: '系统日志',
-                      iconColor: const Color(0xFFFFB020),
-                      onTap: () => Navigator.of(context).push(appRoute(const LogsPage())),
-                    ),
-                    SettingRow(
                       icon: Icons.schedule_rounded,
                       title: '计划任务',
                       iconColor: const Color(0xFF8A6BFF),
@@ -272,6 +258,25 @@ class _SettingsPageState extends State<SettingsPage> {
                     _ThemeSelector(
                       mode: state.themeMode,
                       onChanged: (mode) => state.setThemeMode(mode),
+                    ),
+                    const SizedBox(height: 18),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Text('主题颜色', style: context.texts.titleSmall),
+                    ),
+                    const SizedBox(height: 10),
+                    Wrap(
+                      spacing: 12,
+                      runSpacing: 10,
+                      children: [
+                        for (final preset in _accentPresets)
+                          _AccentDot(
+                            color: preset.value,
+                            label: preset.key,
+                            selected: state.accentColor.toARGB32() == preset.value.toARGB32(),
+                            onTap: () => state.setAccentColor(preset.value),
+                          ),
+                      ],
                     ),
                   ],
                 ),
@@ -523,6 +528,49 @@ class _RepoOption extends StatelessWidget {
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+const _accentPresets = <({String key, Color value})>[
+  (key: '天蓝', value: Color(0xFF2E6BFF)),
+  (key: '莫奈', value: Color(0xFF6F86A8)),
+  (key: '青绿', value: Color(0xFF3FB59B)),
+  (key: '暮紫', value: Color(0xFF8B7CF6)),
+  (key: '暖橙', value: Color(0xFFE89A5B)),
+  (key: '玫瑰', value: Color(0xFFD47A98)),
+];
+
+class _AccentDot extends StatelessWidget {
+  final Color color;
+  final String label;
+  final bool selected;
+  final VoidCallback onTap;
+  const _AccentDot({required this.color, required this.label, required this.selected, required this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    return GestureDetector(
+      onTap: onTap,
+      behavior: HitTestBehavior.opaque,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 34,
+            height: 34,
+            decoration: BoxDecoration(
+              color: color,
+              shape: BoxShape.circle,
+              border: Border.all(color: selected ? c.textPrimary : c.surface, width: selected ? 2.5 : 1.5),
+              boxShadow: [BoxShadow(color: color.withValues(alpha: 0.30), blurRadius: 8, offset: const Offset(0, 3))],
+            ),
+            child: selected ? const Icon(Icons.check_rounded, color: Colors.white, size: 18) : null,
+          ),
+          const SizedBox(height: 4),
+          Text(label, style: context.texts.labelSmall?.copyWith(color: selected ? c.textPrimary : c.textTertiary, fontSize: 10)),
+        ],
       ),
     );
   }

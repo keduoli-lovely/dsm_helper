@@ -778,6 +778,16 @@ class DsmService {
     }
     return false;
   }
+  int? _dateFolderKey(String path) {
+    final name = path.split('/').last;
+    final digits = name.replaceAll(RegExp(r'[^0-9]'), '');
+    if (digits.length < 4) return null;
+    final year = int.tryParse(digits.substring(0, 4));
+    if (year == null || year < 1990 || year > 2100) return null;
+    final month = digits.length >= 6 ? int.tryParse(digits.substring(4, 6)) ?? 1 : 1;
+    final day = digits.length >= 8 ? int.tryParse(digits.substring(6, 8)) ?? 1 : 1;
+    return year * 10000 + month.clamp(1, 12) * 100 + day.clamp(1, 31);
+  }
   Stream<PhotoItem> folderPhotoStream(String path) {
     final controller = StreamController<PhotoItem>();
     final queue = <String>[path];
@@ -787,6 +797,7 @@ class DsmService {
 
     Future<void> scanDir(String dir) async {
       if (!visited.add(dir)) return;
+      final queueStart = queue.length;
       var offset = 0;
       while (true) {
         Map<String, dynamic> data;
@@ -838,6 +849,18 @@ class DsmService {
         final total = (data['total'] as num?)?.toInt() ?? files.length;
         offset += files.length;
         if (files.isEmpty || files.length < 500 || offset >= total) break;
+      }
+      if (queue.length > queueStart) {
+        final added = queue.sublist(queueStart);
+        added.sort((a, b) {
+          final ka = _dateFolderKey(a);
+          final kb = _dateFolderKey(b);
+          if (ka == null && kb == null) return 0;
+          if (ka == null) return 1;
+          if (kb == null) return -1;
+          return kb.compareTo(ka);
+        });
+        queue.replaceRange(queueStart, queue.length, added);
       }
     }
 

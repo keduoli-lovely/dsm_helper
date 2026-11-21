@@ -194,46 +194,29 @@ class _FilesPageState extends State<FilesPage> {
                   Entrance(
                     index: 0,
                     child: Row(
-                      crossAxisAlignment: CrossAxisAlignment.end,
+                      mainAxisAlignment: MainAxisAlignment.end,
                       children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text('文件', style: context.texts.displayMedium),
-                              const SizedBox(height: 4),
-                              Text(
-                                storage == null ? '浏览你的私有云文件' : '已用 ${formatBytes(storage.usedBytes)} · 共 ${formatBytes(storage.totalBytes)}',
-                                style: context.texts.bodySmall?.copyWith(color: c.textTertiary, fontSize: 12.5),
-                              ),
-                            ],
-                          ),
-                        ),
-                        Row(
-                          children: [
-                            if (_refreshing)
-                              const SizedBox(width: 34, height: 34, child: Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator(strokeWidth: 2.2)))
-                            else
-                              CircleIconButton(icon: Icons.refresh_rounded, onTap: _refresh, size: 18),
-                            const SizedBox(width: 8),
-                            GestureDetector(
-                              onTap: () => Navigator.of(context).push(appRoute(const StoragePage())),
-                              child: Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                                decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(13), boxShadow: c.cardShadow),
-                                child: Row(
-                                  children: [
-                                    Icon(Icons.storage_rounded, size: 15, color: c.primary),
-                                    const SizedBox(width: 5),
-                                    Text(
-                                      storage == null ? '存储' : '${(storage.ratio * 100).toStringAsFixed(0)}%',
-                                      style: tabular(context.texts.labelLarge?.copyWith(color: c.primary, fontSize: 12)),
-                                    ),
-                                  ],
+                        if (_refreshing)
+                          const SizedBox(width: 34, height: 34, child: Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator(strokeWidth: 2.2)))
+                        else
+                          CircleIconButton(icon: Icons.refresh_rounded, onTap: _refresh, size: 18),
+                        const SizedBox(width: 8),
+                        GestureDetector(
+                          onTap: () => Navigator.of(context).push(appRoute(const StoragePage())),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                            decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(13), boxShadow: c.cardShadow),
+                            child: Row(
+                              children: [
+                                Icon(Icons.storage_rounded, size: 15, color: c.primary),
+                                const SizedBox(width: 5),
+                                Text(
+                                  storage == null ? '存储' : '${(storage.ratio * 100).toStringAsFixed(0)}%',
+                                  style: tabular(context.texts.labelLarge?.copyWith(color: c.primary, fontSize: 12)),
                                 ),
-                              ),
+                              ],
                             ),
-                          ],
+                          ),
                         ),
                       ],
                     ),

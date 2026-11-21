@@ -26,7 +26,6 @@ import 'monitor_page.dart';
 import 'photos_page.dart';
 import 'shared_links_page.dart';
 import 'storage_page.dart';
-import 'tasks_page.dart';
 import 'users_page.dart';
 
 class HomePage extends StatefulWidget {

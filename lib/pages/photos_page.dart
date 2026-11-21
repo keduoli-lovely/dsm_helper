@@ -44,6 +44,7 @@ class _PhotosPageState extends State<PhotosPage> {
   int _folderGen = 0;
   final Set<String> _seen = {};
   bool _refreshing = false;
+  bool _sortDesc = true;
   static final Map<String, _PhotoCache> _cache = {};
 
   @override
@@ -126,7 +127,7 @@ class _PhotosPageState extends State<PhotosPage> {
       setState(() {
         if (background) _items.clear();
         _items.addAll(fetched.where((e) => _items.every((old) => old.id != e.id)));
-        _items.sort((a, b) => (b.takenAt ?? DateTime(0)).compareTo(a.takenAt ?? DateTime(0)));
+        _items.sort((a, b) => _sortDesc ? (b.takenAt ?? DateTime(0)).compareTo(a.takenAt ?? DateTime(0)) : (a.takenAt ?? DateTime(0)).compareTo(b.takenAt ?? DateTime(0)));
         _hasMore = fetched.length >= _pageSize;
         _loading = false;
         _loadingMore = false;
@@ -191,6 +192,7 @@ class _PhotosPageState extends State<PhotosPage> {
           _loading = false;
           _refreshing = false;
           _items.add(item);
+          _items.sort((a, b) => _sortDesc ? (b.takenAt ?? DateTime(0)).compareTo(a.takenAt ?? DateTime(0)) : (a.takenAt ?? DateTime(0)).compareTo(b.takenAt ?? DateTime(0)));
         });
       },
       onError: (Object e) {
@@ -229,6 +231,14 @@ class _PhotosPageState extends State<PhotosPage> {
         final client = _immich ??= ImmichClient(url: source.immichUrl, apiKey: source.immichKey, trustSelfSigned: source.trustSelfSigned);
         return client.search(page: page, size: _pageSize);
     }
+  }
+
+  void _toggleSort() {
+    setState(() {
+      _sortDesc = !_sortDesc;
+      _items.sort((a, b) => _sortDesc ? (b.takenAt ?? DateTime(0)).compareTo(a.takenAt ?? DateTime(0)) : (a.takenAt ?? DateTime(0)).compareTo(b.takenAt ?? DateTime(0)));
+    });
+    showToast(context, _sortDesc ? '日期：新 → 旧' : '日期：旧 → 新');
   }
 
   Future<void> _refresh() async {
@@ -393,7 +403,9 @@ class _PhotosPageState extends State<PhotosPage> {
                       ? const SizedBox(width: 38, height: 38, child: Padding(padding: EdgeInsets.all(9), child: CircularProgressIndicator(strokeWidth: 2.2)))
                       : CircleIconButton(icon: Icons.refresh_rounded, onTap: _refresh, size: 20),
                 const SizedBox(width: 6),
-                CircleIconButton(icon: Icons.tune_rounded, onTap: _changeSource, size: 20),
+                CircleIconButton(icon: Icons.swap_vert_rounded, onTap: _toggleSort, size: 18),
+                  const SizedBox(width: 4),
+                  CircleIconButton(icon: Icons.tune_rounded, onTap: _changeSource, size: 20),
               ],
             ),
             Expanded(child: !source.configured ? _buildSetup() : _buildGallery(c)),
