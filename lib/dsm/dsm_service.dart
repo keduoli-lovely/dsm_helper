@@ -515,15 +515,22 @@ class DsmService {
 
   // ---------- 文件分享 / 相册 / 头像 ----------
 
-  Future<SharedLink> createSharingLink(String path) async {
+  Future<SharedLink> createSharingLink(String path, {String? password, DateTime? expireDate, int? expireTimes}) async {
     if (demo) {
-      return SharedLink(id: 'demo', url: 'https://demo.example.com/sharing/demo', expireDate: '永久');
+      final expires = expireDate == null ? '永久' : '${expireDate.year}-${expireDate.month.toString().padLeft(2, '0')}-${expireDate.day.toString().padLeft(2, '0')}';
+      return SharedLink(id: 'demo', url: 'https://demo.example.com/sharing/demo', expireDate: expires);
     }
+    final params = <String, dynamic>{'path': [path]};
+    if (password != null && password.isNotEmpty) params['password'] = password;
+    if (expireDate != null) {
+      params['date_expired'] = '"${expireDate.year}-${expireDate.month.toString().padLeft(2, '0')}-${expireDate.day.toString().padLeft(2, '0')}"';
+    }
+    if (expireTimes != null && expireTimes > 0) params['expire_times'] = expireTimes;
     final data = await client.callMap(
       api: 'SYNO.FileStation.Sharing',
       method: 'create',
       version: 3,
-      params: {'path': [path]},
+      params: params,
     );
     final links = (data['links'] as List?) ?? const [];
     if (links.isEmpty || links.first is! Map) {

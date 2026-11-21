@@ -567,15 +567,21 @@ class DsmPackage {
       );
 
   factory DsmPackage.fromJson(Map<String, dynamic> d) {
-    final status = _asString(d['status'] ?? d['package_status'] ?? d['state']);
-    final runningFlag = d['running'] ?? d['is_running'];
+    // DSM 7 把 status / startable 放在 additional 对象里，不能只看顶层。
+    final additional = d['additional'] is Map ? (d['additional'] as Map).cast<String, dynamic>() : const <String, dynamic>{};
+    String pick(String key) => _asString(d[key] ?? additional[key]);
+    final status = pick('status').isNotEmpty
+        ? pick('status')
+        : (pick('status_origin').isNotEmpty ? pick('status_origin') : (pick('package_status').isNotEmpty ? pick('package_status') : pick('state')));
+    final runningFlag = d['running'] ?? d['is_running'] ?? additional['running'];
+    final startable = d['startable'] ?? additional['startable'];
     return DsmPackage(
       id: _asString(d['id']),
       name: _asString(d['name'] ?? d['dname']),
       version: _asString(d['version']),
       status: status.isNotEmpty ? status : (runningFlag == true ? 'running' : ''),
-      startable: d['startable'] is bool ? d['startable'] as bool : null,
-      description: _asString(d['description']),
+      startable: startable is bool ? startable : null,
+      description: _asString(d['description'] ?? additional['description']),
     );
   }
 }

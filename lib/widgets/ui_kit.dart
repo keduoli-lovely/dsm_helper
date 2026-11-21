@@ -350,3 +350,28 @@ Widget blurBackdrop() => BackdropFilter(
 
 /// 一些小的排版工具。
 TextStyle tabular(TextStyle? style) => (style ?? const TextStyle()).copyWith(fontFeatures: const [FontFeature.tabularFigures()]);
+
+/// 仅当页面是被压入路由时显示返回，底部导航的根页面不会出现。
+class TabBackButton extends StatelessWidget {
+  const TabBackButton({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = context.colors;
+    return GestureDetector(
+      onTap: () => Navigator.of(context).maybePop(),
+      behavior: HitTestBehavior.opaque,
+      child: Container(
+        width: 36,
+        height: 36,
+        margin: const EdgeInsets.only(right: 10),
+        decoration: BoxDecoration(
+          color: colors.surface,
+          shape: BoxShape.circle,
+          boxShadow: colors.cardShadow,
+        ),
+        child: Icon(Icons.arrow_back_ios_new_rounded, size: 15, color: colors.textPrimary),
+      ),
+    );
+  }
+}

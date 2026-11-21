@@ -338,7 +338,19 @@ class Handler(BaseHTTPRequestHandler):
         if api == "SYNO.DownloadStation.Task":
             return {"success": True, "data": {}}
         if api == "SYNO.Core.Package" and method == "list":
-            return {"success": True, "data": {"packages": PACKAGES}}
+            return {"success": True, "data": {"packages": [
+            {
+                "id": pkg["id"],
+                "name": pkg["name"],
+                "version": pkg["version"],
+                "additional": {
+                    "status": pkg["status"],
+                    "startable": pkg["startable"],
+                    "description": pkg["description"],
+                },
+            }
+            for pkg in PACKAGES
+        ]}}
         if api == "SYNO.Core.Package.Control":
             pid = p.get("id")
             for pkg in PACKAGES:
