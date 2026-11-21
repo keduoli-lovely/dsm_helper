@@ -41,6 +41,9 @@ class _PhotosPageState extends State<PhotosPage> {
   static const int _pageSize = 80;
   ImmichClient? _immich;
   StreamSubscription<PhotoItem>? _folderSub;
+  int _folderGen = 0;
+  final Set<String> _seen = {};
+  bool _refreshing = false;
   static final Map<String, _PhotoCache> _cache = {};
 
   @override
@@ -147,7 +150,8 @@ class _PhotosPageState extends State<PhotosPage> {
     }
   }
 
-  Future<void> _startFolderStream(AppState state, PhotoSource source) async {
+  Future<void> _startFolderStream(AppState state, PhotoSource source, {bool keepExisting = false}) async {
+    final generation = ++_folderGen;
     final service = state.service;
     if (service == null) {
       setState(() {
@@ -164,32 +168,37 @@ class _PhotosPageState extends State<PhotosPage> {
       return;
     }
     await _folderSub?.cancel();
+    if (!keepExisting) _seen.clear();
     setState(() {
-      _loading = true;
-      _items.clear();
+      _loading = !keepExisting;
+      if (!keepExisting) _items.clear();
       _hasMore = false;
       _loadingMore = false;
       _error = null;
     });
+    if (keepExisting) _seen.addAll(_items.map((e) => e.id));
     _folderSub = service.folderPhotoStream(source.folderPath).listen(
       (item) {
-        if (!mounted) return;
+        if (!mounted || generation != _folderGen) return;
+        if (!_seen.add(item.id)) return;
         setState(() {
           _loading = false;
-          if (_items.every((old) => old.id != item.id)) _items.add(item);
+          _refreshing = false;
+          _items.add(item);
         });
       },
       onError: (Object e) {
-        if (!mounted) return;
+        if (!mounted || generation != _folderGen) return;
         setState(() {
           _error = '';
           _loading = false;
         });
       },
       onDone: () {
-        if (!mounted) return;
+        if (!mounted || generation != _folderGen) return;
         setState(() {
           _loading = false;
+          _refreshing = false;
           _hasMore = false;
         });
         _cache[_cacheKey(source)] = _PhotoCache(List.unmodifiable(_items.take(500).toList()), false, DateTime.now());
@@ -216,7 +225,32 @@ class _PhotosPageState extends State<PhotosPage> {
     }
   }
 
+  Future<void> _refresh() async {
+    if (_refreshing) return;
+    final state = context.read<AppState>();
+    final source = state.photoSource;
+    setState(() => _refreshing = true);
+    if (source.type == PhotoSourceType.folder) {
+      await _startFolderStream(state, source, keepExisting: true);
+      return;
+    }
+    try {
+      final fetched = await _fetch(state, source, 0, 1);
+      if (!mounted) return;
+      setState(() {
+        for (final item in fetched) {
+          if (_seen.add(item.id)) _items.add(item);
+        }
+        _items.sort((a, b) => (b.takenAt ?? DateTime(0)).compareTo(a.takenAt ?? DateTime(0)));
+      });
+      _cache[_cacheKey(source)] = _PhotoCache(List.unmodifiable(_items.take(500).toList()), _hasMore, DateTime.now());
+    } catch (_) {} finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
+
   Future<void> _loadMore() async {
+    if (_refreshing) return;
     if (_loadingMore || !_hasMore || _loading) return;
     await _load();
   }
@@ -349,7 +383,9 @@ class _PhotosPageState extends State<PhotosPage> {
                       ? source.label
                       : '${source.label} · ${_items.length} 张照片',
               actions: [
-                CircleIconButton(icon: Icons.refresh_rounded, onTap: () => _load(reset: true), size: 20),
+                _refreshing
+                      ? const SizedBox(width: 38, height: 38, child: Padding(padding: EdgeInsets.all(9), child: CircularProgressIndicator(strokeWidth: 2.2)))
+                      : CircleIconButton(icon: Icons.refresh_rounded, onTap: _refresh, size: 20),
                 const SizedBox(width: 6),
                 CircleIconButton(icon: Icons.tune_rounded, onTap: _changeSource, size: 20),
               ],

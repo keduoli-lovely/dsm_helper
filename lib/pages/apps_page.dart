@@ -31,6 +31,7 @@ class _AppsPageState extends State<AppsPage> {
   List<CatalogPackage> _catalog = [];
   List<PackageVolume> _volumes = [];
   int _libraryFilter = 0;
+  bool _refreshing = false;
   bool _catalogLoading = false;
   String? _catalogError;
 
@@ -137,6 +138,17 @@ class _AppsPageState extends State<AppsPage> {
     }
     return message;
   }
+  Future<void> _refresh() async {
+    if (_refreshing) return;
+    setState(() => _refreshing = true);
+    try {
+      await _load(silent: true);
+      if (mounted) await _loadCatalog();
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
+  }
+
   bool _matches(DsmPackage pkg) {
     if (_filter == 1 && !pkg.isRunning) return false;
     if (_filter == 2 && pkg.isRunning) return false;
@@ -202,10 +214,12 @@ class _AppsPageState extends State<AppsPage> {
                             ],
                           ),
                         ),
-                        IconButton(
-                          onPressed: _load,
-                          icon: Icon(Icons.refresh_rounded, color: c.textSecondary, size: 21),
-                        ),
+                        _refreshing
+                            ? const SizedBox(width: 42, height: 42, child: Padding(padding: EdgeInsets.all(11), child: CircularProgressIndicator(strokeWidth: 2.2)))
+                            : IconButton(
+                                onPressed: _refresh,
+                                icon: Icon(Icons.refresh_rounded, color: c.textSecondary, size: 21),
+                              ),
                       ],
                     ),
                   ),

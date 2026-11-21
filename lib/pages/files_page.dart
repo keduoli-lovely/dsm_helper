@@ -7,6 +7,7 @@ import '../dsm/dsm_service.dart';
 import '../dsm/models.dart';
 import '../state/app_state.dart';
 import '../theme/app_theme.dart';
+import '../widgets/app_icon_tile.dart';
 import '../widgets/feedback.dart';
 import '../widgets/file_visual.dart';
 import '../widgets/nav_bar.dart';
@@ -31,6 +32,7 @@ class _FilesPageState extends State<FilesPage> {
   bool _requested = false;
   Map<String, int> _folderCounts = {};
   Map<String, int> _fileCounts = {};
+  bool _refreshing = false;
 
   @override
   void initState() {
@@ -96,6 +98,16 @@ class _FilesPageState extends State<FilesPage> {
 
   void _openShare(ShareInfo share) {
     Navigator.of(context).push(appRoute(FilesBrowserPage(initialPath: share.path, initialTitle: share.name)));
+  }
+
+  Future<void> _refresh() async {
+    if (_refreshing) return;
+    setState(() => _refreshing = true);
+    try {
+      await _load(silent: true);
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
+    }
   }
 
   Future<void> _uploadFlow() async {
@@ -197,22 +209,31 @@ class _FilesPageState extends State<FilesPage> {
                             ],
                           ),
                         ),
-                        GestureDetector(
-                          onTap: () => Navigator.of(context).push(appRoute(const StoragePage())),
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                            decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(13), boxShadow: c.cardShadow),
-                            child: Row(
-                              children: [
-                                Icon(Icons.storage_rounded, size: 15, color: c.primary),
-                                const SizedBox(width: 5),
-                                Text(
-                                  storage == null ? '存储' : '${(storage.ratio * 100).toStringAsFixed(0)}%',
-                                  style: tabular(context.texts.labelLarge?.copyWith(color: c.primary, fontSize: 12)),
+                        Row(
+                          children: [
+                            if (_refreshing)
+                              const SizedBox(width: 34, height: 34, child: Padding(padding: EdgeInsets.all(8), child: CircularProgressIndicator(strokeWidth: 2.2)))
+                            else
+                              CircleIconButton(icon: Icons.refresh_rounded, onTap: _refresh, size: 18),
+                            const SizedBox(width: 8),
+                            GestureDetector(
+                              onTap: () => Navigator.of(context).push(appRoute(const StoragePage())),
+                              child: Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                                decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(13), boxShadow: c.cardShadow),
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.storage_rounded, size: 15, color: c.primary),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      storage == null ? '存储' : '${(storage.ratio * 100).toStringAsFixed(0)}%',
+                                      style: tabular(context.texts.labelLarge?.copyWith(color: c.primary, fontSize: 12)),
+                                    ),
+                                  ],
                                 ),
-                              ],
+                              ),
                             ),
-                          ),
+                          ],
                         ),
                       ],
                     ),

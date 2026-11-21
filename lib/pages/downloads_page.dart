@@ -33,6 +33,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
   DownloadAdapter? _adapter;
   String? _adapterToolId;
   bool _requested = false;
+  bool _refreshing = false;
 
   @override
   void initState() {
@@ -82,6 +83,16 @@ class _DownloadsPageState extends State<DownloadsPage> {
     } on DsmException {
       _adapter = null;
       _adapterToolId = null;
+    }
+  }
+
+  Future<void> _refresh() async {
+    if (_refreshing) return;
+    setState(() => _refreshing = true);
+    try {
+      await _load(silent: true);
+    } finally {
+      if (mounted) setState(() => _refreshing = false);
     }
   }
 
@@ -140,12 +151,6 @@ class _DownloadsPageState extends State<DownloadsPage> {
       return;
     }
     final controller = TextEditingController();
-    try {
-      final data = await Clipboard.getData(Clipboard.kTextPlain);
-      if (data?.text != null && (data!.text!.startsWith('magnet:') || data.text!.trim().startsWith('http'))) {
-        controller.text = data.text!.trim();
-      }
-    } catch (_) {}
 
     if (!mounted) return;
     final tool = _state.activeTool;
@@ -168,6 +173,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
           onPressed: () async {
             final uri = controller.text.trim();
             if (uri.isEmpty) return;
+            controller.clear();
             Navigator.pop(context);
             try {
               await _adapter!.add(uri);
@@ -181,6 +187,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
         ),
       ],
     );
+    controller.dispose();
   }
 
   Future<void> _action(DownloadTask task, String action) async {
@@ -425,6 +432,9 @@ class _DownloadsPageState extends State<DownloadsPage> {
                                   ],
                                 ),
                               ),
+                              _refreshing
+                                  ? const SizedBox(width: 38, height: 38, child: Padding(padding: EdgeInsets.all(9), child: CircularProgressIndicator(strokeWidth: 2.2)))
+                                  : CircleIconButton(icon: Icons.refresh_rounded, onTap: _refresh, size: 18),
                               CircleIconButton(icon: Icons.tune_rounded, onTap: _manageTools, size: 20),
                               const SizedBox(width: 2),
                               GestureDetector(
@@ -433,9 +443,9 @@ class _DownloadsPageState extends State<DownloadsPage> {
                                   width: 44,
                                   height: 44,
                                   decoration: BoxDecoration(
-                                    gradient: const LinearGradient(colors: [Color(0xFF4BE0A8), Color(0xFF16C08E)]),
+                                    gradient: const LinearGradient(colors: [Color(0xFF6FA9FF), Color(0xFF2E6BFF)]),
                                     borderRadius: BorderRadius.circular(15),
-                                    boxShadow: [BoxShadow(color: const Color(0xFF16C08E).withValues(alpha: 0.35), blurRadius: 16, offset: const Offset(0, 7))],
+                                    boxShadow: [BoxShadow(color: const Color(0xFF2E6BFF).withValues(alpha: 0.35), blurRadius: 16, offset: const Offset(0, 7))],
                                   ),
                                   child: const Icon(Icons.add_rounded, color: Colors.white, size: 25),
                                 ),
@@ -446,9 +456,11 @@ class _DownloadsPageState extends State<DownloadsPage> {
                         const SizedBox(height: 16),
                         Entrance(
                           index: 1,
-                          child: SingleChildScrollView(
-                            scrollDirection: Axis.horizontal,
-                            child: Row(
+                          child: Align(
+                            alignment: Alignment.centerLeft,
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
                               children: [
                                 for (final item in state.downloadTools)
                                   Padding(
@@ -470,6 +482,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
                                 ),
                               ],
                             ),
+                          ),
                           ),
                         ),
                         const SizedBox(height: 14),
@@ -564,9 +577,9 @@ class _DownloadsPageState extends State<DownloadsPage> {
                 width: 82,
                 height: 82,
                 decoration: BoxDecoration(
-                  gradient: const LinearGradient(colors: [Color(0xFF4BE0A8), Color(0xFF16C08E)]),
+                  gradient: const LinearGradient(colors: [Color(0xFF6FA9FF), Color(0xFF2E6BFF)]),
                   borderRadius: BorderRadius.circular(26),
-                  boxShadow: [BoxShadow(color: const Color(0xFF16C08E).withValues(alpha: 0.32), blurRadius: 24, offset: const Offset(0, 12))],
+                  boxShadow: [BoxShadow(color: const Color(0xFF2E6BFF).withValues(alpha: 0.30), blurRadius: 24, offset: const Offset(0, 12))],
                 ),
                 child: const Icon(Icons.cloud_download_rounded, size: 40, color: Colors.white),
               ),
@@ -620,11 +633,11 @@ class _ToolChip extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(add ? Icons.add_rounded : Icons.download_rounded, size: 14, color: selected ? Colors.white : c.textTertiary),
+            Icon(add ? Icons.add_rounded : Icons.download_rounded, size: 14, color: selected ? Colors.white : (add ? c.primary : c.textTertiary)),
             const SizedBox(width: 5),
             Text(
               tool.label,
-              style: context.texts.labelMedium?.copyWith(fontSize: 11.5, color: selected ? Colors.white : c.textSecondary),
+              style: context.texts.labelMedium?.copyWith(fontSize: 11.5, color: selected ? Colors.white : (add ? c.primary : c.textSecondary)),
             ),
           ],
         ),

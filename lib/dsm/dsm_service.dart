@@ -1,3 +1,4 @@
+import 'dart:async';
 import '../demo/demo_store.dart';
 import 'dsm_client.dart';
 import 'models.dart';
@@ -765,12 +766,15 @@ class DsmService {
     return cursor.images.skip(offset).take(limit).toList();
   }
 
-  Stream<PhotoItem> folderPhotoStream(String path) async* {
+  Stream<PhotoItem> folderPhotoStream(String path) {
+    final controller = StreamController<PhotoItem>();
     final queue = <String>[path];
     final visited = <String>{};
-    while (queue.isNotEmpty) {
-      final dir = queue.removeAt(0);
-      if (!visited.add(dir)) continue;
+    var active = 0;
+    var closed = false;
+
+    Future<void> scanDir(String dir) async {
+      if (!visited.add(dir)) return;
       var offset = 0;
       while (true) {
         Map<String, dynamic> data;
@@ -789,7 +793,7 @@ class DsmService {
             },
           );
         } catch (_) {
-          break;
+          return;
         }
         final files = (data['files'] as List?) ?? const [];
         for (final raw in files.whereType<Map>()) {
@@ -806,22 +810,46 @@ class DsmService {
           final time = (additional['time'] as Map?)?.cast<String, dynamic>() ?? const {};
           final mtime = (time['mtime'] as num?)?.toInt();
           final size = (additional['size'] as num?)?.toInt() ?? 0;
-          yield PhotoItem(
-            id: filePath,
-            name: name,
-            takenAt: mtime == null ? null : DateTime.fromMillisecondsSinceEpoch(mtime * 1000),
-            createdAt: mtime == null ? null : DateTime.fromMillisecondsSinceEpoch(mtime * 1000),
-            size: size,
-            path: filePath,
-            thumbUrl: thumbnailUri(filePath, size: 'small')?.toString() ?? '',
-            originalUrl: downloadUri(filePath, open: true).toString(),
-          );
+          if (!closed) {
+            controller.add(PhotoItem(
+              id: filePath,
+              name: name,
+              takenAt: mtime == null ? null : DateTime.fromMillisecondsSinceEpoch(mtime * 1000),
+              createdAt: mtime == null ? null : DateTime.fromMillisecondsSinceEpoch(mtime * 1000),
+              size: size,
+              path: filePath,
+              thumbUrl: thumbnailUri(filePath, size: 'small')?.toString() ?? '',
+              originalUrl: downloadUri(filePath, open: true).toString(),
+            ));
+          }
         }
         final total = (data['total'] as num?)?.toInt() ?? files.length;
         offset += files.length;
         if (files.isEmpty || files.length < 500 || offset >= total) break;
       }
     }
+
+    void pump() {
+      if (closed) return;
+      while (active < 6 && queue.isNotEmpty) {
+        final dir = queue.removeAt(0);
+        active++;
+        scanDir(dir).whenComplete(() {
+          active--;
+          pump();
+        });
+      }
+      if (active == 0 && queue.isEmpty && !closed) {
+        closed = true;
+        controller.close();
+      }
+    }
+
+    controller.onListen = pump;
+    controller.onCancel = () {
+      closed = true;
+    };
+    return controller.stream;
   }
   Future<void> _scanNextFolder(_FolderPhotoCursor cursor) async {
     if (cursor.queue.isEmpty) {
