@@ -305,17 +305,66 @@ class DsmService {
 
   Future<List<DsmPackage>> packages() async {
     if (demo) return DemoStore.instance.packages();
-    final data = await client.callMap(
-      api: 'SYNO.Core.Package',
-      method: 'list',
-      version: 2,
-      params: {
-        'additional': ['description', 'status', 'startable', 'installed_info', 'dsm_apps', 'url'],
-        'polling_interval': 15,
-      },
-    );
+    Map<String, dynamic> data;
+    try {
+      // DSM 6 与部分 DSM 7 在 v1 才会返回 status 字段，优先用 v1。
+      data = await client.callMap(
+        api: 'SYNO.Core.Package',
+        method: 'list',
+        version: 1,
+        params: {
+          'additional': ['description', 'status', 'startable', 'installed_info', 'dsm_apps', 'url'],
+          'polling_interval': 15,
+        },
+      );
+    } on DsmException {
+      data = await client.callMap(
+        api: 'SYNO.Core.Package',
+        method: 'list',
+        version: 2,
+        params: {
+          'additional': ['description', 'status', 'startable', 'installed_info', 'dsm_apps', 'url'],
+          'polling_interval': 15,
+        },
+      );
+    }
     final list = (data['packages'] as List?) ?? const [];
-    return list.whereType<Map>().map((e) => DsmPackage.fromJson(e.cast<String, dynamic>())).toList();
+    var packages = list.whereType<Map>().map((e) => DsmPackage.fromJson(e.cast<String, dynamic>())).toList();
+    // 少数 DSM 版本列表接口不返回 status，用 Polling.Data 补齐运行状态。
+    if (packages.isNotEmpty && packages.every((p) => !p.statusKnown)) {
+      final running = await _runningPackageIds();
+      if (running.isNotEmpty) {
+        packages = packages.map((p) => p.copyWith(status: running.contains(p.id.toLowerCase()) ? 'running' : 'stopped')).toList();
+      }
+    }
+    return packages;
+  }
+
+  Future<Set<String>> _runningPackageIds() async {
+    final result = <String>{};
+    try {
+      final data = await client.callMap(
+        api: 'SYNO.Core.Polling.Data',
+        method: 'get',
+        version: 1,
+        params: {'action': 'load', 'load_disabled_port': true},
+      );
+      void visit(dynamic node) {
+        if (node is Map) {
+          final status = '${node['status'] ?? node['state'] ?? ''}'.toLowerCase();
+          final id = '${node['id'] ?? node['package'] ?? node['pkg'] ?? ''}'.toLowerCase();
+          if (id.isNotEmpty && (status == 'running' || status == 'started')) result.add(id);
+          node.forEach((_, value) => visit(value));
+        } else if (node is List) {
+          for (final item in node) {
+            visit(item);
+          }
+        }
+      }
+
+      visit(data);
+    } catch (_) {}
+    return result;
   }
 
   Future<void> packageControl(String id, bool start) async {
@@ -605,6 +654,179 @@ class DsmService {
     if (value.startsWith('http://') || value.startsWith('https://')) return value;
     if (value.startsWith('/')) return '${client.baseUrl}$value';
     return null;
+  }
+
+  // ---------- Docker ----------
+
+  Future<List<DockerContainer>> dockerContainers() async {
+    if (demo) return DemoStore.instance.dockerContainers();
+    final data = await client.callMap(
+      api: 'SYNO.Docker.Container',
+      method: 'list',
+      version: 1,
+      params: {'limit': -1, 'offset': 0, 'type': 'all'},
+    );
+    final containers = <String, DockerContainer>{};
+
+    void addContainer(dynamic raw, [String? fallbackName]) {
+      if (raw is! Map) return;
+      final map = raw.cast<String, dynamic>();
+      final name = (map['name'] ?? fallbackName ?? '').toString();
+      if (name.isEmpty) return;
+      containers[name] = DockerContainer(
+        name: name,
+        status: (map['status'] ?? map['state'] ?? '').toString(),
+        image: (map['image'] ?? map['Image'] ?? '').toString(),
+        id: (map['id'] ?? '').toString(),
+        ports: _dockerPorts(map),
+      );
+    }
+
+    final raw = data['containers'] ?? data['data'];
+    if (raw is List) {
+      for (final item in raw) {
+        addContainer(item);
+      }
+    } else if (raw is Map) {
+      raw.forEach((key, value) {
+        if (value is Map) {
+          if (value['containers'] is List) {
+            for (final item in value['containers'] as List) {
+              addContainer(item, '${key}');
+            }
+          } else {
+            addContainer(value, '$key');
+          }
+        }
+      });
+    }
+
+    try {
+      final resourceData = await client.callMap(api: 'SYNO.Docker.Container.Resource', method: 'get', version: 1);
+      final resources = (resourceData['resources'] as List?) ?? const [];
+      for (final item in resources) {
+        if (item is! Map) continue;
+        final name = item['name']?.toString();
+        if (name == null || name.isEmpty) continue;
+        final existing = containers[name];
+        if (existing == null) {
+          containers[name] = DockerContainer(name: name, cpu: _asNum(item['cpu']), memory: _asNum(item['memory']).toInt());
+        } else {
+          containers[name] = existing.copyWith(cpu: _asNum(item['cpu']), memory: _asNum(item['memory']).toInt());
+        }
+      }
+    } catch (_) {}
+    final list = containers.values.toList()
+      ..sort((a, b) {
+        if (a.isRunning != b.isRunning) return a.isRunning ? -1 : 1;
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+    return list;
+  }
+
+  double _asNum(dynamic value) => value is num ? value.toDouble() : double.tryParse('$value') ?? 0;
+
+  String _dockerPorts(Map<String, dynamic> map) {
+    final raw = map['ports'] ?? map['port_bindings'];
+    if (raw is List) {
+      final parts = <String>[];
+      for (final item in raw) {
+        if (item is Map) {
+          final host = item['host_port'] ?? item['hostPort'] ?? item['host'];
+          final container = item['container_port'] ?? item['containerPort'] ?? item['container'] ?? item['port'];
+          if (host != null && container != null) parts.add('$host:$container');
+        } else {
+          parts.add('$item');
+        }
+      }
+      return parts.take(3).join(', ');
+    }
+    return raw?.toString() ?? '';
+  }
+
+  Future<List<DockerImage>> dockerImages() async {
+    if (demo) return DemoStore.instance.dockerImages();
+    final data = await client.callMap(
+      api: 'SYNO.Docker.Image',
+      method: 'list',
+      version: 1,
+      params: {'limit': -1, 'offset': 0, 'show_dsm': false},
+    );
+    final list = (data['images'] as List?) ?? const [];
+    return list.whereType<Map>().map((raw) {
+      final map = raw.cast<String, dynamic>();
+      final tags = (map['tags'] as List?) ?? const [];
+      return DockerImage(
+        repository: '${map['repository'] ?? ''}',
+        tag: tags.isEmpty ? '' : '${tags.first}',
+        size: (map['size'] as num?)?.toInt() ?? 0,
+        id: '${map['id'] ?? ''}',
+      );
+    }).toList()
+      ..sort((a, b) => a.repository.toLowerCase().compareTo(b.repository.toLowerCase()));
+  }
+
+  Future<void> dockerAction(String name, String action) async {
+    if (demo) {
+      DemoStore.instance.dockerAction(name, action);
+      return;
+    }
+    await client.callMap(
+      api: 'SYNO.Docker.Container',
+      method: action,
+      version: 1,
+      params: {'name': '"$name"', if (action == 'delete') 'preserve_profile': false},
+    );
+  }
+
+  Future<void> dockerPull(String repository, String tag) async {
+    if (demo) {
+      DemoStore.instance.dockerPull(repository, tag);
+      return;
+    }
+    await client.callMap(
+      api: 'SYNO.Docker.Image',
+      method: 'pull',
+      version: 1,
+      params: {'repository': repository, 'tag': tag.isEmpty ? 'latest' : tag},
+    );
+  }
+
+  Future<void> dockerCreate(Map<String, dynamic> profile) async {
+    if (demo) {
+      DemoStore.instance.dockerCreate(profile);
+      return;
+    }
+    await client.callMap(
+      api: 'SYNO.Docker.Container',
+      method: 'create',
+      version: 1,
+      params: {'profile': profile},
+    );
+  }
+
+  Future<String> dockerLogs(String name) async {
+    if (demo) return DemoStore.instance.dockerLogs(name);
+    final data = await client.callMap(
+      api: 'SYNO.Docker.Container.Log',
+      method: 'get',
+      version: 1,
+      params: {
+        'name': '"$name"',
+        'sort_dir': '"ASC"',
+        'date': '"${DateTime.now().year}-${DateTime.now().month.toString().padLeft(2, '0')}-${DateTime.now().day.toString().padLeft(2, '0')}"',
+        'limit': 200,
+        'offset': 0,
+      },
+    );
+    final logs = data['logs'] ?? data['data'];
+    if (logs is List) {
+      return logs.map((item) {
+        if (item is Map) return '${item['msg'] ?? item['log'] ?? item['message'] ?? item}';
+        return '$item';
+      }).join('\n');
+    }
+    return logs?.toString() ?? '';
   }
 
   Future<Map<String, dynamic>> networkInfo() async {

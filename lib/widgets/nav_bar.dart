@@ -14,7 +14,7 @@ const kNavItems = <NavItemData>[
   NavItemData(icon: Icons.home_outlined, activeIcon: Icons.home_rounded, label: '首页'),
   NavItemData(icon: Icons.folder_outlined, activeIcon: Icons.folder_rounded, label: '文件'),
   NavItemData(icon: Icons.cloud_download_outlined, activeIcon: Icons.cloud_download_rounded, label: '下载'),
-  NavItemData(icon: Icons.grid_view_outlined, activeIcon: Icons.grid_view_rounded, label: '应用'),
+  NavItemData(icon: Icons.extension_outlined, activeIcon: Icons.extension_rounded, label: '套件'),
   NavItemData(icon: Icons.person_outline_rounded, activeIcon: Icons.person_rounded, label: '我的'),
 ];
 

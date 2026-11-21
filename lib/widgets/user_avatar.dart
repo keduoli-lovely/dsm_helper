@@ -1,22 +1,23 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 
 import '../theme/app_theme.dart';
 
-/// 真实用户头像；取不到时回退到渐变色首字母。
+/// 本地头像：用户选择的图片 > 内置默认头像 > 首字母渐变。
 class UserAvatar extends StatelessWidget {
   final String account;
-  final String? imageUrl;
-  final Map<String, String> headers;
+  final String? imagePath;
   final double size;
 
   const UserAvatar({
     super.key,
     required this.account,
-    this.imageUrl,
-    this.headers = const {},
+    this.imagePath,
     this.size = 42,
   });
 
+  static const _defaultAsset = 'assets/default_avatar.jpg';
   static const _palettes = [
     [Color(0xFFFFC080), Color(0xFFFF9F73)],
     [Color(0xFF8FB6FF), Color(0xFF5B84F7)],
@@ -29,45 +30,40 @@ class UserAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fallback = _Fallback(account: account, size: size, palette: _palette);
-    final url = imageUrl;
-    final avatar = Container(
+    final c = context.colors;
+    return Container(
       width: size,
       height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         gradient: LinearGradient(begin: Alignment.topLeft, end: Alignment.bottomRight, colors: _palette),
-        boxShadow: [BoxShadow(color: _palette.last.withValues(alpha: 0.32), blurRadius: size * 0.34, offset: Offset(0, size * 0.14))],
+        boxShadow: [
+          BoxShadow(color: _palette.last.withValues(alpha: 0.30), blurRadius: size * 0.32, offset: Offset(0, size * 0.12)),
+        ],
+        border: Border.all(color: c.surface.withValues(alpha: 0.9), width: 1.4),
       ),
-      child: ClipOval(
-        child: url == null || url.isEmpty
-            ? fallback
-            : Image.network(
-                url,
-                width: size,
-                height: size,
-                fit: BoxFit.cover,
-                headers: headers,
-                errorBuilder: (_, __, ___) => fallback,
-                frameBuilder: (context, child, frame, wasSynchronouslyLoaded) {
-                  if (wasSynchronouslyLoaded || frame != null) return child;
-                  return fallback;
-                },
-              ),
-      ),
+      child: ClipOval(child: _image()),
     );
-    return avatar;
   }
-}
 
-class _Fallback extends StatelessWidget {
-  final String account;
-  final double size;
-  final List<Color> palette;
-  const _Fallback({required this.account, required this.size, required this.palette});
+  Widget _image() {
+    final path = imagePath;
+    if (path != null && path.isNotEmpty) {
+      final file = File(path);
+      if (file.existsSync()) {
+        return Image.file(file, fit: BoxFit.cover, width: size, height: size, errorBuilder: (_, __, ___) => _fallback());
+      }
+    }
+    return Image.asset(
+      _defaultAsset,
+      fit: BoxFit.cover,
+      width: size,
+      height: size,
+      errorBuilder: (_, __, ___) => _fallback(),
+    );
+  }
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _fallback() {
     final initial = account.isEmpty ? '?' : account.substring(0, 1).toUpperCase();
     return Container(
       color: Colors.transparent,

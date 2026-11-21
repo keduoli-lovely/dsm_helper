@@ -6,7 +6,6 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../dsm/dsm_client.dart';
 import '../dsm/dsm_service.dart';
 import '../dsm/models.dart';
-import '../util/avatar.dart';
 import '../util/http_overrides.dart';
 
 enum BootPhase { booting, needLogin, ready }
@@ -23,6 +22,7 @@ class AppState extends ChangeNotifier {
   static const _kDownloadTools = 'download_tools_v2';
   static const _kActiveTool = 'active_download_tool_v2';
   static const _kPhotoSource = 'photo_source_v2';
+  static const _kAvatar = 'avatar_path_v2';
 
   BootPhase phase = BootPhase.booting;
   ThemeMode themeMode = ThemeMode.light;
@@ -49,9 +49,7 @@ class AppState extends ChangeNotifier {
 
   int? latencyMs;
   bool? online;
-  String? userEmail;
-  String? avatarUrl;
-  bool _profileLoaded = false;
+  String? customAvatarPath;
 
   static Future<AppState> load() async {
     final prefs = await SharedPreferences.getInstance();
@@ -101,6 +99,7 @@ class AppState extends ChangeNotifier {
         downloadTools = [];
       }
     }
+    customAvatarPath = _prefs.getString(_kAvatar);
     activeToolId = _prefs.getString(_kActiveTool);
     if (activeToolId != null && downloadTools.every((t) => t.id != activeToolId)) {
       activeToolId = null;
@@ -205,10 +204,6 @@ class AppState extends ChangeNotifier {
     }
     await _prefs.setString(_kServers, jsonEncode(servers.map((e) => e.toJson()).toList()));
     await _prefs.setString(_kCurrent, key);
-    _profileLoaded = false;
-    avatarUrl = null;
-    userEmail = null;
-    await refreshProfile();
     await measureLatency();
     phase = BootPhase.ready;
     notifyListeners();
@@ -232,7 +227,6 @@ class AppState extends ChangeNotifier {
       activeToolId = downloadTools.first.id;
     }
     await _refreshCore(notify: false);
-    await refreshProfile();
     phase = BootPhase.ready;
     notifyListeners();
   }
@@ -261,9 +255,6 @@ class AppState extends ChangeNotifier {
     demo = false;
     latencyMs = null;
     online = null;
-    avatarUrl = null;
-    userEmail = null;
-    _profileLoaded = false;
     TrustedHttpOverrides.trustedHost = null;
     phase = BootPhase.needLogin;
     notifyListeners();
@@ -285,7 +276,6 @@ class AppState extends ChangeNotifier {
       utilizationError = '$e';
     }
     await measureLatency(notify: false);
-    if (!_profileLoaded) await refreshProfile(notify: false);
     notifyListeners();
   }
 
@@ -316,50 +306,16 @@ class AppState extends ChangeNotifier {
     if (notify) notifyListeners();
   }
 
-  Future<void> refreshProfile({bool notify = true}) async {
-    final s = service;
-    final account = server?.account;
-    if (s == null || account == null || account.isEmpty) return;
-    try {
-      final profile = await s.userProfile(account);
-      _profileLoaded = true;
-      userEmail = profile['email']?.toString();
-      final candidate = _extractAvatar(profile);
-      avatarUrl = candidate ?? gravatarUrl(userEmail);
-    } catch (_) {
-      _profileLoaded = true;
-      avatarUrl = gravatarUrl(userEmail);
+  Future<void> setCustomAvatar(String? path) async {
+    customAvatarPath = (path == null || path.isEmpty) ? null : path;
+    if (customAvatarPath == null) {
+      await _prefs.remove(_kAvatar);
+    } else {
+      await _prefs.setString(_kAvatar, customAvatarPath!);
     }
-    if (notify) notifyListeners();
+    notifyListeners();
   }
-
-  String? _extractAvatar(Map<String, dynamic> profile) {
-    for (final key in ['avatar', 'photo', 'profile_photo', 'avatar_url']) {
-      final url = _absolute(profile[key]);
-      if (url != null) return url;
-    }
-    final additional = profile['additional'];
-    if (additional is Map) {
-      for (final key in ['avatar', 'photo', 'profile_photo']) {
-        final url = _absolute(additional[key]);
-        if (url != null) return url;
-      }
-    }
-    return null;
-  }
-
-  String? _absolute(dynamic value) {
-    if (value is! String || value.isEmpty) return null;
-    if (value.startsWith('http://') || value.startsWith('https://')) return value;
-    if (value.startsWith('/') && server != null) {
-      return '${server!.https ? 'https' : 'http'}://${server!.host}:${server!.port}$value';
-    }
-    return null;
-  }
-
   Map<String, String> get imageHeaders => service?.imageHeaders ?? const {};
-
-  Map<String, String> get avatarHeaders => imageHeaders;
 
   Future<void> setThemeMode(ThemeMode mode) async {
     themeMode = mode;

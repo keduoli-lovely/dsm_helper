@@ -19,6 +19,7 @@ import '../widgets/nav_bar.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/ui_kit.dart';
 import '../widgets/user_avatar.dart';
+import 'docker_page.dart';
 import 'files_browser_page.dart';
 import 'logs_page.dart';
 import 'monitor_page.dart';
@@ -43,6 +44,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
   List<LogEntry> _logs = [];
   List<FileEntry> _recentFiles = [];
   List<PhotoItem> _photos = [];
+  List<DockerContainer> _dockerContainers = [];
   Map<String, dynamic>? _network;
   bool _busy = false;
   bool _editing = false;
@@ -135,6 +137,13 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
     }
     if (widgets.contains(HomeWidgetType.photos)) {
       _photos = await _loadPhotos(state);
+    }
+    if (widgets.contains(HomeWidgetType.docker)) {
+      try {
+        _dockerContainers = await service.dockerContainers();
+      } catch (_) {
+        _dockerContainers = [];
+      }
     }
     if (mounted) setState(() {});
   }
@@ -355,6 +364,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver {
           logs: _logs,
           onOpen: () => Navigator.of(context).push(appRoute(const LogsPage())),
         ),
+      HomeWidgetType.docker => _DockerCard(
+          containers: _dockerContainers,
+          onOpen: () => Navigator.of(context).push(appRoute(const DockerPage())),
+        ),
     };
 
     if (!_editing) return child;
@@ -512,8 +525,7 @@ class _TopBar extends StatelessWidget {
           onTap: onAvatar,
           child: UserAvatar(
             account: state.server?.account ?? '?',
-            imageUrl: state.avatarUrl,
-            headers: state.imageHeaders,
+            imagePath: state.customAvatarPath,
             size: 42,
           ),
         ),
@@ -636,7 +648,7 @@ class _QuickGrid extends StatelessWidget {
         colors: const [Color(0xFFB59BFF), Color(0xFF8A6BFF)],
         onTap: () => Navigator.of(context).push(appRoute(const PhotosPage())),
       ),
-      _QuickItem(label: '应用中心', icon: Icons.storefront_rounded, colors: const [Color(0xFF5B9BFF), Color(0xFF3A6FF5)], onTap: () => onOpenTab(3)),
+      _QuickItem(label: '套件中心', icon: Icons.storefront_rounded, colors: const [Color(0xFF5B9BFF), Color(0xFF3A6FF5)], onTap: () => onOpenTab(3)),
       _QuickItem(
         label: '资源监控',
         icon: Icons.monitor_heart_rounded,
@@ -668,10 +680,10 @@ class _QuickGrid extends StatelessWidget {
         onTap: () => Navigator.of(context).push(appRoute(const SharedLinksPage())),
       ),
       _QuickItem(
-        label: '计划任务',
-        icon: Icons.schedule_rounded,
-        colors: const [Color(0xFFB0A8FF), Color(0xFF8672F0)],
-        onTap: () => Navigator.of(context).push(appRoute(const TasksPage())),
+        label: 'Docker',
+        icon: Icons.widgets_rounded,
+        colors: const [Color(0xFF3DA9FC), Color(0xFF2496ED)],
+        onTap: () => Navigator.of(context).push(appRoute(const DockerPage())),
       ),
     ];
 
@@ -734,6 +746,7 @@ _WidgetMeta _meta(HomeWidgetType type) => switch (type) {
       HomeWidgetType.photos => const _WidgetMeta('相册预览', '显示相册里最近的几张照片', Icons.photo_library_rounded, Color(0xFFFF6E93)),
       HomeWidgetType.packages => const _WidgetMeta('套件状态', '运行中的套件与数量', Icons.apps_rounded, Color(0xFF6C8BFF)),
       HomeWidgetType.logs => const _WidgetMeta('最新日志', '最近几条系统日志', Icons.receipt_long_rounded, Color(0xFF8A96AE)),
+      HomeWidgetType.docker => const _WidgetMeta('Docker 容器', '容器运行状态与快捷操作', Icons.widgets_rounded, Color(0xFF2496ED)),
     };
 
 class _WidgetCardHeader extends StatelessWidget {
@@ -1441,6 +1454,65 @@ class _LogsCard extends StatelessWidget {
                 ),
               ),
             ],
+        ],
+      ),
+    );
+  }
+}
+
+class _DockerCard extends StatelessWidget {
+  final List<DockerContainer> containers;
+  final VoidCallback onOpen;
+  const _DockerCard({required this.containers, required this.onOpen});
+
+  @override
+  Widget build(BuildContext context) {
+    final c = context.colors;
+    final running = containers.where((item) => item.isRunning).toList();
+    return SoftCard(
+      padding: const EdgeInsets.fromLTRB(18, 16, 18, 14),
+      onTap: onOpen,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _WidgetCardHeader(title: 'Docker 容器', icon: Icons.widgets_rounded, color: const Color(0xFF2496ED), action: '管理', onAction: onOpen),
+          const SizedBox(height: 10),
+          if (containers.isEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6),
+              child: Text('没有读取到容器，或未安装 Container Manager', style: context.texts.bodySmall?.copyWith(color: c.textTertiary)),
+            )
+          else ...[
+            Row(
+              children: [
+                Text('${running.length}', style: tabular(context.texts.displayLarge?.copyWith(fontSize: 28))),
+                const SizedBox(width: 6),
+                Text('/ ${containers.length} 个运行中', style: context.texts.bodySmall?.copyWith(color: c.textTertiary)),
+              ],
+            ),
+            if (containers.isNotEmpty) ...[
+              const SizedBox(height: 8),
+              for (final container in containers.take(3))
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 3),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 6,
+                        height: 6,
+                        decoration: BoxDecoration(
+                          color: container.isRunning ? c.success : (container.isError ? c.danger : c.textTertiary),
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                      const SizedBox(width: 7),
+                      Expanded(child: Text(container.name, style: context.texts.bodySmall?.copyWith(fontSize: 12), maxLines: 1, overflow: TextOverflow.ellipsis)),
+                      Text(container.statusLabel, style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 10)),
+                    ],
+                  ),
+                ),
+            ],
+          ],
         ],
       ),
     );

@@ -344,6 +344,54 @@ class DemoStore {
 
   List<DsmUser> users() => [..._users];
 
+  // ---------- Docker ----------
+  final List<DockerContainer> _containers = [
+    const DockerContainer(name: 'immich_server', status: 'running', image: 'ghcr.io/immich-app/immich-server:release', ports: '2283:2283', cpu: 2.4, memory: 412000000),
+    const DockerContainer(name: 'immich_postgres', status: 'running', image: 'tensorchord/pgvecto-rs:pg14-v0.2.0', ports: '5432:5432', cpu: 0.6, memory: 132000000),
+    const DockerContainer(name: 'qbittorrent', status: 'running', image: 'linuxserver/qbittorrent:latest', ports: '8080:8080', cpu: 1.2, memory: 96000000),
+    const DockerContainer(name: 'jellyfin', status: 'stopped', image: 'jellyfin/jellyfin:latest', ports: '8096:8096', cpu: 0, memory: 0),
+    const DockerContainer(name: 'watchtower', status: 'error', image: 'containrrr/watchtower:latest', ports: '', cpu: 0, memory: 0),
+  ];
+
+  final List<DockerImage> _images = [
+    const DockerImage(repository: 'ghcr.io/immich-app/immich-server', tag: 'release', size: 1100000000),
+    const DockerImage(repository: 'linuxserver/qbittorrent', tag: 'latest', size: 280000000),
+    const DockerImage(repository: 'jellyfin/jellyfin', tag: 'latest', size: 720000000),
+    const DockerImage(repository: 'postgres', tag: '16', size: 420000000),
+  ];
+
+  List<DockerContainer> dockerContainers() => [..._containers];
+
+  List<DockerImage> dockerImages() => [..._images];
+
+  void dockerAction(String name, String action) {
+    final index = _containers.indexWhere((c) => c.name == name);
+    if (index < 0) return;
+    final container = _containers[index];
+    if (action == 'start') {
+      _containers[index] = container.copyWith(status: 'running');
+    } else if (action == 'stop') {
+      _containers[index] = container.copyWith(status: 'stopped');
+    } else if (action == 'restart') {
+      _containers[index] = container.copyWith(status: 'running');
+    } else if (action == 'delete') {
+      _containers.removeAt(index);
+    }
+  }
+
+  void dockerPull(String repository, String tag) {
+    if (_images.every((i) => !(i.repository == repository && i.tag == tag))) {
+      _images.add(DockerImage(repository: repository, tag: tag.isEmpty ? 'latest' : tag, size: 200000000));
+    }
+  }
+
+  void dockerCreate(Map<String, dynamic> profile) {
+    final name = '${profile['name'] ?? 'container'}';
+    final image = '${profile['image'] ?? ''}';
+    _containers.add(DockerContainer(name: name, status: 'stopped', image: image));
+  }
+
+  String dockerLogs(String name) => '2025-11-21 12:00:00 容器 $name 已启动\n2025-11-21 12:00:05 监听端口 8080\n2025-11-21 12:01:10 服务运行正常';
   void updateUser(String name, {required String description, required String email}) {
     final index = _users.indexWhere((u) => u.name == name);
     if (index < 0) return;

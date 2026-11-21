@@ -86,10 +86,8 @@ class _AppsPageState extends State<AppsPage> {
 
   List<DsmPackage> get _visible => _packages.where(_matches).toList();
 
-  List<DsmPackage> get _apps => _visible.where((p) => !p.isDocker && !p.isSystemService).toList()
+  List<DsmPackage> get _apps => _visible.where((p) => !p.isSystemService).toList()
     ..sort((a, b) => (b.isRunning ? 1 : 0).compareTo(a.isRunning ? 1 : 0));
-
-  List<DsmPackage> get _docker => _visible.where((p) => p.isDocker).toList();
 
   List<DsmPackage> get _system => _visible.where((p) => p.isSystemService && !p.isDocker).toList();
 
@@ -133,7 +131,7 @@ class _AppsPageState extends State<AppsPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text('应用中心', style: context.texts.displayMedium),
+                          Text('套件中心', style: context.texts.displayMedium),
                           const SizedBox(height: 4),
                           Text(
                             _packages.isEmpty ? '管理已安装的套件' : '$running 个运行中 · 共 ${_packages.length} 个',
@@ -184,7 +182,6 @@ class _AppsPageState extends State<AppsPage> {
                 const EmptyHint(icon: Icons.apps_rounded, title: '没有匹配的套件')
               else ...[
                 if (_apps.isNotEmpty) ..._section('套件', Icons.apps_rounded, _apps, state),
-                if (_docker.isNotEmpty) ..._section('Docker / 容器', Icons.widgets_rounded, _docker, state),
                 if (_system.isNotEmpty) ..._section('系统服务', Icons.shield_rounded, _system, state),
               ],
             ],
@@ -347,7 +344,7 @@ class _PackageCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = context.colors;
     final style = _styleFor(package);
-    final statusColor = package.isRunning ? c.success : c.textTertiary;
+    final statusColor = package.statusKnown ? (package.isRunning ? c.success : c.textTertiary) : c.textTertiary;
     return SoftCard(
       padding: const EdgeInsets.fromLTRB(14, 12, 10, 12),
       radius: 22,

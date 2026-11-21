@@ -163,58 +163,130 @@ class Utilization {
   });
 
   factory Utilization.fromJson(Map<String, dynamic> d) {
-    final cpu = (d['cpu'] as Map?)?.cast<String, dynamic>() ?? const {};
-    final mem = (d['memory'] as Map?)?.cast<String, dynamic>() ?? const {};
-    final net = (d['network'] as List?) ?? const [];
-    final disk = (d['disk'] as Map?)?.cast<String, dynamic>() ?? const {};
+    Map<String, dynamic> mapOf(dynamic value) {
+      if (value is Map) return value.map((key, item) => MapEntry('$key', item));
+      return const {};
+    }
 
-    final cpuUsage = _asDouble(cpu['user']) + _asDouble(cpu['system']) + _asDouble(cpu['other']);
-    final memTotalMb = _asDouble(mem['memory_size']);
-    final memAvailableMb = _asDouble(mem['avail_real']);
-    final memTotal = memTotalMb > 0 ? (memTotalMb * 1024 * 1024).round() : 0;
-    var memUsed = memTotal > 0 ? memTotal - (memAvailableMb * 1024 * 1024).round() : 0;
-    if (memUsed < 0) memUsed = 0;
+    /// DSM 6 返回数组，DSM 7 部分接口返回以设备名为 key 的对象，两种都兼容。
+    List<dynamic> listOf(dynamic value) {
+      if (value is List) return value;
+      if (value is Map) {
+        // 单个吞吐对象（disk.total 等），直接作为一个元素。
+        if (value.containsKey('read_byte') || value.containsKey('read') || value.containsKey('write') || value.containsKey('rx') || value.containsKey('tx')) {
+          return [value];
+        }
+        final total = value['total'];
+        if (total is List) return total;
+        if (total is Map) return [total];
+        final items = <dynamic>[];
+        value.forEach((key, item) {
+          if (item is Map) {
+            items.add({...item, 'device': item['device'] ?? '$key'});
+          } else if (item is List) {
+            items.addAll(item.whereType<Map>());
+          }
+        });
+        return items;
+      }
+      return const [];
+    }
 
-    double rx = 0, tx = 0;
-    for (final item in net) {
-      if (item is Map) {
-        rx += _asDouble(item['rx']);
-        tx += _asDouble(item['tx']);
+    final cpu = mapOf(d['cpu']);
+    final mem = mapOf(d['memory']);
+
+    var cpuPercent = _asDouble(cpu['total']);
+    if (cpuPercent <= 0) cpuPercent = _asDouble(cpu['user']) + _asDouble(cpu['system']) + _asDouble(cpu['other']);
+    if (cpuPercent <= 0) cpuPercent = _asDouble(cpu['user_load']) + _asDouble(cpu['system_load']) + _asDouble(cpu['other_load']);
+    if (cpuPercent <= 0) cpuPercent = _asDouble(cpu['usage']);
+
+    // DSM 7 的 memory_size 单位是 KB，部分老版本返回 MB。
+    final memSize = _asDouble(mem['memory_size']);
+    final availKb = _asDouble(mem['avail_real']);
+    final totalRealKb = _asDouble(mem['total_real']);
+    var memTotal = 0;
+    var memUsed = 0;
+    var memPercent = 0.0;
+    if (memSize > 0) {
+      final sizeKb = memSize >= 1000000 ? memSize : memSize * 1024;
+      memTotal = (sizeKb * 1024).round();
+      final usedKb = sizeKb - availKb;
+      memUsed = (usedKb * 1024).round().clamp(0, memTotal);
+      memPercent = (usedKb / sizeKb * 100).clamp(0, 100).toDouble();
+    } else if (totalRealKb > 0) {
+      memTotal = (totalRealKb * 1024).round();
+      memUsed = ((totalRealKb - availKb) * 1024).round().clamp(0, memTotal);
+      memPercent = (memUsed / memTotal * 100).clamp(0, 100).toDouble();
+    }
+    if (memPercent <= 0 && _asDouble(mem['real_usage']) > 0) {
+      memPercent = _asDouble(mem['real_usage']).clamp(0, 100).toDouble();
+      if (memTotal > 0) memUsed = (memTotal * memPercent / 100).round();
+    }
+
+    final netItems = listOf(d['network']);
+    Map<dynamic, dynamic>? netTotal;
+    final netOthers = <dynamic>[];
+    for (final item in netItems) {
+      if (item is! Map) continue;
+      if ('${item['device'] ?? ''}' == 'total') {
+        netTotal = item;
+      } else {
+        netOthers.add(item);
+      }
+    }
+    var netRx = 0.0;
+    var netTx = 0.0;
+    for (final item in (netTotal != null ? [netTotal] : netOthers)) {
+      netRx += _asDouble(item['rx']);
+      netTx += _asDouble(item['tx']);
+    }
+
+    final diskRaw = d['disk'];
+    final diskMap = mapOf(diskRaw);
+    final diskTotalList = listOf(diskMap['total'] ?? diskRaw);
+    double readOf(Map<dynamic, dynamic> item) => item.containsKey('read_byte') ? _asDouble(item['read_byte']) : _asDouble(item['read']);
+    double writeOf(Map<dynamic, dynamic> item) => item.containsKey('write_byte') ? _asDouble(item['write_byte']) : _asDouble(item['write']);
+    var diskRead = 0.0;
+    var diskWrite = 0.0;
+    var diskUtil = 0.0;
+    if (diskTotalList.isNotEmpty && diskTotalList.first is Map) {
+      final total = diskTotalList.first as Map;
+      diskRead = readOf(total);
+      diskWrite = writeOf(total);
+      diskUtil = _asDouble(total['utilization']);
+    }
+    if (diskRead <= 0 && diskWrite <= 0) {
+      for (final item in diskTotalList) {
+        if (item is Map) {
+          diskRead += readOf(item);
+          diskWrite += writeOf(item);
+        }
       }
     }
 
-    final diskTotal = (disk['total'] as List?) ?? const [];
-    double read = 0, write = 0, util = 0;
-    if (diskTotal.isNotEmpty && diskTotal.first is Map) {
-      final t = diskTotal.first as Map;
-      read = _asDouble(t['read']);
-      write = _asDouble(t['write']);
-      util = _asDouble(t['utilization']);
-    }
-
     final disks = <DiskThroughput>[];
-    final diskList = (disk['disk'] as List?) ?? const [];
+    final diskList = diskMap.isNotEmpty ? listOf(diskMap['disk']) : (diskRaw is List ? diskRaw : const []);
     for (final item in diskList) {
       if (item is Map) {
         disks.add(DiskThroughput(
           device: _asString(item['device']),
-          read: _asDouble(item['read']),
-          write: _asDouble(item['write']),
+          read: readOf(item),
+          write: writeOf(item),
           utilization: _asDouble(item['utilization']),
         ));
       }
     }
 
     return Utilization(
-      cpuPercent: cpuUsage.clamp(0, 100).toDouble(),
-      memPercent: memTotal > 0 ? (memUsed / memTotal * 100).clamp(0, 100).toDouble() : 0,
+      cpuPercent: cpuPercent.clamp(0, 100).toDouble(),
+      memPercent: memPercent.clamp(0, 100).toDouble(),
       memUsedBytes: memUsed,
       memTotalBytes: memTotal,
-      netRx: rx,
-      netTx: tx,
-      diskRead: read,
-      diskWrite: write,
-      diskUtil: util,
+      netRx: netRx,
+      netTx: netTx,
+      diskRead: diskRead,
+      diskWrite: diskWrite,
+      diskUtil: diskUtil,
       disks: disks,
       sampledAt: DateTime.now(),
     );
@@ -471,7 +543,12 @@ class DsmPackage {
     this.description = '',
   });
 
-  bool get isRunning => status == 'running' || status == 'start';
+  bool get isRunning {
+    final value = status.toLowerCase();
+    return value == 'running' || value == 'start' || value == 'started' || value == 'on';
+  }
+
+  bool get statusKnown => status.isNotEmpty;
   bool get canStart => startable != false && !isSystemService;
   String get displayName => name.isEmpty ? id : name;
 
@@ -480,14 +557,27 @@ class DsmPackage {
 
   bool get isDocker => id.toLowerCase().contains('docker') || id.toLowerCase().contains('container');
 
-  factory DsmPackage.fromJson(Map<String, dynamic> d) => DsmPackage(
-        id: _asString(d['id']),
-        name: _asString(d['name'] ?? d['dname']),
-        version: _asString(d['version']),
-        status: _asString(d['status'], 'stopped'),
-        startable: d['startable'] is bool ? d['startable'] as bool : null,
-        description: _asString(d['description']),
+  DsmPackage copyWith({String? status}) => DsmPackage(
+        id: id,
+        name: name,
+        version: version,
+        status: status ?? this.status,
+        startable: startable,
+        description: description,
       );
+
+  factory DsmPackage.fromJson(Map<String, dynamic> d) {
+    final status = _asString(d['status'] ?? d['package_status'] ?? d['state']);
+    final runningFlag = d['running'] ?? d['is_running'];
+    return DsmPackage(
+      id: _asString(d['id']),
+      name: _asString(d['name'] ?? d['dname']),
+      version: _asString(d['version']),
+      status: status.isNotEmpty ? status : (runningFlag == true ? 'running' : ''),
+      startable: d['startable'] is bool ? d['startable'] as bool : null,
+      description: _asString(d['description']),
+    );
+  }
 }
 
 class DsmUser {
@@ -775,7 +865,7 @@ class PhotoItem {
 }
 
 /// 首页可自由开关的卡片。
-enum HomeWidgetType { resource, storage, transfers, overview, network, disks, recentFiles, quickActions, photos, packages, logs }
+enum HomeWidgetType { resource, storage, transfers, overview, network, disks, recentFiles, quickActions, photos, packages, logs, docker }
 
 class SharedLink {
   final String id;
@@ -790,4 +880,65 @@ class SharedLink {
         expireDate: _asString(d['expire_date'] ?? d['date_expired']),
         owner: _asString(d['link_owner'] ?? d['owner']),
       );
+}
+
+class DockerContainer {
+  final String name;
+  final String status;
+  final String image;
+  final String id;
+  final String ports;
+  final double cpu;
+  final int memory;
+
+  const DockerContainer({
+    required this.name,
+    this.status = '',
+    this.image = '',
+    this.id = '',
+    this.ports = '',
+    this.cpu = 0,
+    this.memory = 0,
+  });
+
+  bool get isRunning => _normalized == 'running';
+  bool get isStopped => _normalized == 'stopped';
+  bool get isError => _normalized == 'error';
+  bool get statusKnown => status.isNotEmpty;
+
+  String get _normalized {
+    final value = status.toLowerCase();
+    if (value == 'running' || value == 'up' || value == 'started' || value == 'active') return 'running';
+    if (value == 'stopped' || value == 'exited' || value == 'down' || value == 'created') return 'stopped';
+    if (value == 'error' || value == 'dead' || value == 'restarting') return 'error';
+    return '';
+  }
+
+  String get statusLabel => switch (_normalized) {
+        'running' => '运行中',
+        'stopped' => '已停止',
+        'error' => '异常',
+        _ => '状态未知',
+      };
+
+  DockerContainer copyWith({String? status, double? cpu, int? memory}) => DockerContainer(
+        name: name,
+        status: status ?? this.status,
+        image: image,
+        id: id,
+        ports: ports,
+        cpu: cpu ?? this.cpu,
+        memory: memory ?? this.memory,
+      );
+}
+
+class DockerImage {
+  final String repository;
+  final String tag;
+  final int size;
+  final String id;
+
+  const DockerImage({required this.repository, this.tag = '', this.size = 0, this.id = ''});
+
+  String get displayName => tag.isEmpty ? repository : '$repository:$tag';
 }

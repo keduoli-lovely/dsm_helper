@@ -1,4 +1,8 @@
+import 'dart:io';
+
+import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -128,11 +132,12 @@ class _SettingsPageState extends State<SettingsPage> {
                 padding: const EdgeInsets.all(18),
                 child: Row(
                   children: [
-                    UserAvatar(
-                      account: account,
-                      imageUrl: state.avatarUrl,
-                      headers: state.imageHeaders,
-                      size: 58,
+                    GestureDetector(
+                      onTap: _showAvatarSheet,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [UserAvatar(account: account, imagePath: state.customAvatarPath, size: 58)],
+                      ),
                     ),
                     const SizedBox(width: 14),
                     Expanded(
@@ -229,6 +234,13 @@ class _SettingsPageState extends State<SettingsPage> {
                 child: Column(
                   children: [
                     SettingRow(
+                      icon: Icons.face_rounded,
+                      title: '头像',
+                      subtitle: state.customAvatarPath == null ? '使用默认头像' : '已选择本地图片',
+                      iconColor: const Color(0xFFFF9F0A),
+                      onTap: _showAvatarSheet,
+                    ),
+                    SettingRow(
                       icon: Icons.terminal_rounded,
                       title: 'SSH 服务',
                       subtitle: _ssh == null ? '读取中…' : (_ssh! ? '已开启，可在终端登录' : '已关闭'),
@@ -307,6 +319,47 @@ class _SettingsPageState extends State<SettingsPage> {
         ),
       ),
     );
+  }
+
+  Future<void> _showAvatarSheet() async {
+    final state = context.read<AppState>();
+    await showAppSheet(
+      context,
+      title: '头像',
+      subtitle: '选择一张本地图片作为头像',
+      children: [
+        SheetAction(
+          icon: Icons.photo_library_rounded,
+          label: '从相册选择',
+          subtitle: '图片只保存在本机',
+          onTap: () async {
+            Navigator.pop(context);
+            await _pickAvatar();
+          },
+        ),
+        if (state.customAvatarPath != null)
+          SheetAction(
+            icon: Icons.restart_alt_rounded,
+            label: '恢复默认头像',
+            onTap: () async {
+              Navigator.pop(context);
+              await context.read<AppState>().setCustomAvatar(null);
+            },
+          ),
+      ],
+    );
+  }
+
+  Future<void> _pickAvatar() async {
+    final files = await FilePicker.pickFiles(type: FileType.image);
+    if (files.isEmpty) return;
+    final file = files.first;
+    final dir = await getApplicationSupportDirectory();
+    final target = File('${dir.path}/avatar_${DateTime.now().millisecondsSinceEpoch}.jpg');
+    await target.writeAsBytes(await file.xFile.readAsBytes());
+    if (!mounted) return;
+    await context.read<AppState>().setCustomAvatar(target.path);
+    if (mounted) showToast(context, '头像已更新');
   }
 
   void _showRepos() {

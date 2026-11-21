@@ -61,6 +61,11 @@ def api_info():
             "SYNO.Core.TaskScheduler",
             "SYNO.Core.Terminal",
             "SYNO.Foto.Browse.Item",
+            "SYNO.Docker.Container",
+            "SYNO.Docker.Container.Resource",
+            "SYNO.Docker.Container.Log",
+            "SYNO.Docker.Image",
+            "SYNO.Foto.Thumbnail",
             "SYNO.Foto.Thumbnail",
         ]
     }
@@ -82,13 +87,17 @@ def system_info():
 
 def utilization():
     t = time.time()
+    # DSM 7 风格：network / disk 是对象而不是数组，CPU 使用 *_load 字段，内存单位 KB。
     return {
-        "cpu": {"user": 18 + (t % 7), "system": 6, "other": 1},
-        "memory": {"memory_size": 2048, "avail_real": 1180, "total_real": 2048},
-        "network": [{"device": "eth0", "rx": 2_400_000, "tx": 320_000}],
+        "cpu": {"user_load": 18 + (t % 7), "system_load": 6, "other_load": 1},
+        "memory": {"memory_size": 2097152, "avail_real": 1200000, "total_real": 2000000, "real_usage": 42},
+        "network": {
+            "total": {"device": "total", "rx": 2_400_000, "tx": 320_000},
+            "eth0": {"device": "eth0", "rx": 2_400_000, "tx": 320_000},
+        },
         "disk": {
-            "total": [{"device": "total", "read": 8_400_000, "write": 2_100_000, "utilization": 23}],
-            "disk": [{"device": "sda", "read": 5_100_000, "write": 1_200_000, "utilization": 18}],
+            "total": {"device": "total", "read_byte": 8_400_000, "write_byte": 2_100_000, "utilization": 23},
+            "disk": [{"device": "sda", "read_byte": 5_100_000, "write_byte": 1_200_000, "utilization": 18}],
         },
         "space": {"total": {"total": 4000000000000, "used": 2400000000000}},
     }
@@ -141,6 +150,28 @@ PACKAGES = [
     {"id": "SynologyApplicationService", "name": "Synology Application Service", "version": "1.7.6-0831", "status": "running", "startable": False, "description": "系统基础服务"},
 ]
 
+
+DOCKER_CONTAINERS = [
+    {"id": "c1", "name": "immich_server", "status": "running", "image": "ghcr.io/immich-app/immich-server:release",
+     "ports": [{"host_port": 2283, "container_port": 2283, "type": "tcp"}]},
+    {"id": "c2", "name": "qbittorrent", "status": "running", "image": "linuxserver/qbittorrent:latest",
+     "ports": [{"host_port": 8080, "container_port": 8080, "type": "tcp"}]},
+    {"id": "c3", "name": "jellyfin", "status": "stopped", "image": "jellyfin/jellyfin:latest",
+     "ports": [{"host_port": 8096, "container_port": 8096, "type": "tcp"}]},
+]
+
+DOCKER_IMAGES = [
+    {"id": "i1", "repository": "ghcr.io/immich-app/immich-server", "tags": ["release"], "size": 1100000000},
+    {"id": "i2", "repository": "linuxserver/qbittorrent", "tags": ["latest"], "size": 280000000},
+    {"id": "i3", "repository": "jellyfin/jellyfin", "tags": ["latest"], "size": 720000000},
+]
+
+
+def docker_find(name):
+    for container in DOCKER_CONTAINERS:
+        if container["name"] == name:
+            return container
+    return None
 
 def storage():
     return {
@@ -228,6 +259,52 @@ class Handler(BaseHTTPRequestHandler):
             return {"success": True, "data": utilization()}
         if api == "SYNO.Storage.CGI.Storage":
             return {"success": True, "data": storage()}
+        if api == "SYNO.Docker.Container" and method == "list":
+            return {"success": True, "data": {"containers": DOCKER_CONTAINERS}}
+        if api == "SYNO.Docker.Container.Resource":
+            return {"success": True, "data": {"resources": [
+                {"name": c["name"], "cpu": 1.2, "memory": 96000000, "memoryPercent": 1.1} for c in DOCKER_CONTAINERS
+            ]}}
+        if api == "SYNO.Docker.Container" and method in ("start", "stop", "restart", "delete"):
+            name = p.get("name")
+            if isinstance(name, str):
+                name = name.strip('"')
+            container = docker_find(name)
+            if container is not None:
+                if method == "start" or method == "restart":
+                    container["status"] = "running"
+                elif method == "stop":
+                    container["status"] = "stopped"
+                elif method == "delete":
+                    DOCKER_CONTAINERS.remove(container)
+            return {"success": True, "data": {}}
+        if api == "SYNO.Docker.Container" and method == "create":
+            profile = p.get("profile") or {}
+            if isinstance(profile, str):
+                try:
+                    profile = json.loads(profile)
+                except Exception:
+                    profile = {}
+            DOCKER_CONTAINERS.append({
+                "id": f"c{len(DOCKER_CONTAINERS) + 1}",
+                "name": profile.get("name", f"container{len(DOCKER_CONTAINERS) + 1}"),
+                "status": "stopped",
+                "image": profile.get("image", ""),
+                "ports": [],
+            })
+            return {"success": True, "data": {}}
+        if api == "SYNO.Docker.Container.Log":
+            return {"success": True, "data": {"logs": [
+                {"msg": "2025-11-21 12:00:00 container started"},
+                {"msg": "2025-11-21 12:00:05 listening on 8080"},
+            ]}}
+        if api == "SYNO.Docker.Image" and method == "list":
+            return {"success": True, "data": {"images": DOCKER_IMAGES}}
+        if api == "SYNO.Docker.Image" and method == "pull":
+            repo = p.get("repository", "unknown")
+            tag = p.get("tag", "latest")
+            DOCKER_IMAGES.append({"id": f"i{len(DOCKER_IMAGES) + 1}", "repository": repo, "tags": [tag], "size": 200000000})
+            return {"success": True, "data": {}}
         if api == "SYNO.FileStation.List" and method == "list_share":
             return {"success": True, "data": {"shares": SHARES, "total": len(SHARES)}}
         if api == "SYNO.FileStation.List" and method == "list":
