@@ -1,0 +1,9 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<!-- 启动画面：与应用主色一致的柔和蓝紫底色，避免启动时白屏闪烁 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#E7ECFB" />
+        </shape>
+    </item>
+</layer-list>
