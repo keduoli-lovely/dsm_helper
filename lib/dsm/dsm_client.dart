@@ -94,7 +94,7 @@ class DsmClient {
       'account': account,
       'passwd': password,
       'otp_code': otpCode,
-      'version': '4',
+      'version': '6',
       'api': 'SYNO.API.Auth',
       'method': 'login',
       'session': 'webui',
@@ -257,19 +257,10 @@ class DsmClient {
       'method': 'upload',
       'version': '2',
       if (sid.isNotEmpty) '_sid': sid,
-      'path': destDir,
-      'dest_path': destDir,
-      'create_parents': 'true',
-      'overwrite': 'true',
     });
     final request = http.MultipartRequest('POST', uri)..headers.addAll(_headers);
     request.fields.addAll({
-      'api': 'SYNO.FileStation.Upload',
-      'method': 'upload',
-      'version': '2',
-      if (sid.isNotEmpty) '_sid': sid,
       'path': destDir,
-      'dest_path': destDir,
       'create_parents': 'true',
       'overwrite': 'true',
     });
