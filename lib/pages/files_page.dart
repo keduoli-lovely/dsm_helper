@@ -173,159 +173,161 @@ class _FilesPageState extends State<FilesPage> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: PageScaffold(
-        child: RefreshIndicator(
-          onRefresh: _load,
-          color: c.primary,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 132),
-            children: [
-              Entrance(
-                index: 0,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('文件', style: context.texts.displayMedium),
-                          const SizedBox(height: 4),
-                          Text(
-                            storage == null
-                                ? '浏览你的私有云文件'
-                                : '已用 ${formatBytes(storage.usedBytes)} · 共 ${formatBytes(storage.totalBytes)}',
-                            style: context.texts.bodySmall?.copyWith(color: c.textTertiary, fontSize: 12.5),
-                          ),
-                        ],
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: () => Navigator.of(context).push(appRoute(const StoragePage())),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
-                        decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(13), boxShadow: c.cardShadow),
-                        child: Row(
-                          children: [
-                            Icon(Icons.storage_rounded, size: 15, color: c.primary),
-                            const SizedBox(width: 5),
-                            Text(
-                              storage == null ? '存储' : '${(storage.ratio * 100).toStringAsFixed(0)}%',
-                              style: tabular(context.texts.labelLarge?.copyWith(color: c.primary, fontSize: 12)),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 18),
-              Entrance(
-                index: 1,
-                child: Row(
-                  children: [
-                    Expanded(
-                      child: SearchPill(
-                        hint: '搜索文件',
-                        onTap: () => _openSearch(context),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 22),
-              if (_loading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 60),
-                  child: Center(child: CircularProgressIndicator(strokeWidth: 2.4)),
-                )
-              else if (_error != null)
-                EmptyHint(
-                  icon: Icons.cloud_off_rounded,
-                  title: '无法读取文件列表',
-                  subtitle: _error,
-                  action: FilledButton(
-                    onPressed: _load,
-                    style: FilledButton.styleFrom(minimumSize: const Size(120, 42)),
-                    child: const Text('重试'),
-                  ),
-                )
-              else ...[
-                Entrance(
-                  index: 2,
-                  child: Row(
-                    children: [
-                      Text('共享文件夹', style: context.texts.titleMedium),
-                      const Spacer(),
-                      Text('${_shares.length} 个', style: context.texts.labelSmall?.copyWith(color: c.textTertiary)),
-                    ],
-                  ),
-                ),
-                const SizedBox(height: 12),
-                Entrance(
-                  index: 3,
-                  child: GridView.builder(
-                    shrinkWrap: true,
-                    physics: const NeverScrollableScrollPhysics(),
-                    padding: EdgeInsets.zero,
-                    gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                      crossAxisCount: 2,
-                      mainAxisSpacing: 12,
-                      crossAxisSpacing: 12,
-                      childAspectRatio: 1.42,
-                    ),
-                    itemCount: _shares.length,
-                    itemBuilder: (context, index) {
-                      final share = _shares[index];
-                      return _ShareCard(
-                        share: share,
-                        folders: _folderCounts[share.path],
-                        files: _fileCounts[share.path],
-                        onTap: () => _openShare(share),
-                      );
-                    },
-                  ),
-                ),
-                if (_recent.isNotEmpty) ...[
-                  const SizedBox(height: 22),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+              child: Column(
+                children: [
                   Entrance(
-                    index: 4,
+                    index: 0,
                     child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
                       children: [
-                        Text('最近修改', style: context.texts.titleMedium),
-                        const Spacer(),
-                        Text('自动同步', style: context.texts.labelSmall?.copyWith(color: c.textTertiary)),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('文件', style: context.texts.displayMedium),
+                              const SizedBox(height: 4),
+                              Text(
+                                storage == null ? '浏览你的私有云文件' : '已用 ${formatBytes(storage.usedBytes)} · 共 ${formatBytes(storage.totalBytes)}',
+                                style: context.texts.bodySmall?.copyWith(color: c.textTertiary, fontSize: 12.5),
+                              ),
+                            ],
+                          ),
+                        ),
+                        GestureDetector(
+                          onTap: () => Navigator.of(context).push(appRoute(const StoragePage())),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                            decoration: BoxDecoration(color: c.surface, borderRadius: BorderRadius.circular(13), boxShadow: c.cardShadow),
+                            child: Row(
+                              children: [
+                                Icon(Icons.storage_rounded, size: 15, color: c.primary),
+                                const SizedBox(width: 5),
+                                Text(
+                                  storage == null ? '存储' : '${(storage.ratio * 100).toStringAsFixed(0)}%',
+                                  style: tabular(context.texts.labelLarge?.copyWith(color: c.primary, fontSize: 12)),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                       ],
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 18),
                   Entrance(
-                    index: 5,
-                    child: SoftCard(
-                      padding: const EdgeInsets.symmetric(vertical: 4),
-                      child: Column(
-                        children: [
-                          for (final file in _recent)
-                            FileEntryTile(
-                              entry: file,
-                              showMore: false,
-                              trailing: Icon(Icons.chevron_right_rounded, size: 17, color: c.textTertiary.withValues(alpha: 0.7)),
-                              onTap: () {
-                                final parent = file.path.substring(0, file.path.lastIndexOf('/'));
-                                Navigator.of(context).push(appRoute(FilesBrowserPage(initialPath: parent, initialTitle: parent.split('/').last)));
-                              },
-                            ),
-                        ],
-                      ),
-                    ),
+                    index: 1,
+                    child: SearchPill(hint: '搜索文件', onTap: () => _openSearch(context)),
                   ),
                 ],
-                if (_shares.isEmpty)
-                  const EmptyHint(icon: Icons.folder_off_rounded, title: '没有共享文件夹', subtitle: '请在 DSM 控制面板中创建共享文件夹'),
-              ],
-            ],
-          ),
+              ),
+            ),
+            const SizedBox(height: 14),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _load,
+                color: c.primary,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 132),
+                  children: [
+                    if (_loading)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 60),
+                        child: Center(child: CircularProgressIndicator(strokeWidth: 2.4)),
+                      )
+                    else if (_error != null)
+                      EmptyHint(
+                        icon: Icons.cloud_off_rounded,
+                        title: '无法读取文件列表',
+                        subtitle: _error,
+                        action: FilledButton(
+                          onPressed: _load,
+                          style: FilledButton.styleFrom(minimumSize: const Size(120, 42)),
+                          child: const Text('重试'),
+                        ),
+                      )
+                    else ...[
+                      Entrance(
+                        index: 2,
+                        child: Row(
+                          children: [
+                            Text('共享文件夹', style: context.texts.titleMedium),
+                            const Spacer(),
+                            Text('${_shares.length} 个', style: context.texts.labelSmall?.copyWith(color: c.textTertiary)),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Entrance(
+                        index: 3,
+                        child: GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          padding: EdgeInsets.zero,
+                          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: 2,
+                            mainAxisSpacing: 12,
+                            crossAxisSpacing: 12,
+                            childAspectRatio: 1.42,
+                          ),
+                          itemCount: _shares.length,
+                          itemBuilder: (context, index) {
+                            final share = _shares[index];
+                            return _ShareCard(
+                              share: share,
+                              folders: _folderCounts[share.path],
+                              files: _fileCounts[share.path],
+                              onTap: () => _openShare(share),
+                            );
+                          },
+                        ),
+                      ),
+                      if (_recent.isNotEmpty) ...[
+                        const SizedBox(height: 22),
+                        Entrance(
+                          index: 4,
+                          child: Row(
+                            children: [
+                              Text('最近修改', style: context.texts.titleMedium),
+                              const Spacer(),
+                              Text('自动同步', style: context.texts.labelSmall?.copyWith(color: c.textTertiary)),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 10),
+                        Entrance(
+                          index: 5,
+                          child: SoftCard(
+                            padding: const EdgeInsets.symmetric(vertical: 4),
+                            child: Column(
+                              children: [
+                                for (final file in _recent)
+                                  FileEntryTile(
+                                    entry: file,
+                                    showMore: false,
+                                    trailing: Icon(Icons.chevron_right_rounded, size: 17, color: c.textTertiary.withValues(alpha: 0.7)),
+                                    onTap: () {
+                                      final parent = file.path.substring(0, file.path.lastIndexOf('/'));
+                                      Navigator.of(context).push(appRoute(FilesBrowserPage(initialPath: parent, initialTitle: parent.split('/').last)));
+                                    },
+                                  ),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
+                      if (_shares.isEmpty)
+                        const EmptyHint(icon: Icons.folder_off_rounded, title: '没有共享文件夹', subtitle: '请在 DSM 控制面板中创建共享文件夹'),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          ],
         ),
       ),
       floatingActionButton: Padding(
@@ -341,7 +343,6 @@ class _FilesPageState extends State<FilesPage> {
       ),
     );
   }
-
   void _openSearch(BuildContext context) {
     final controller = TextEditingController();
     showAppSheet(

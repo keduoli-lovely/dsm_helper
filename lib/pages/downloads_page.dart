@@ -409,137 +409,154 @@ class _DownloadsPageState extends State<DownloadsPage> {
       body: PageScaffold(
         child: noTools
             ? _buildNoTools(c)
-            : RefreshIndicator(
-                onRefresh: _load,
-                color: c.primary,
-                child: ListView(
-                  physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 132),
-                  children: [
-                    Entrance(
-                      index: 0,
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+            : Column(
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+                    child: Column(
+                      children: [
+                        Entrance(
+                          index: 0,
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.end,
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text('下载', style: context.texts.displayMedium),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      _tasks.isEmpty ? '${tool?.label ?? ''} 任务' : '$activeCount 个进行中 · ${formatSpeed(speed)}',
+                                      style: context.texts.bodySmall?.copyWith(color: c.textTertiary, fontSize: 12.5),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              CircleIconButton(icon: Icons.tune_rounded, onTap: _manageTools, size: 20),
+                              const SizedBox(width: 2),
+                              GestureDetector(
+                                onTap: _addTask,
+                                child: Container(
+                                  width: 44,
+                                  height: 44,
+                                  decoration: BoxDecoration(
+                                    gradient: const LinearGradient(colors: [Color(0xFF4BE0A8), Color(0xFF16C08E)]),
+                                    borderRadius: BorderRadius.circular(15),
+                                    boxShadow: [BoxShadow(color: const Color(0xFF16C08E).withValues(alpha: 0.35), blurRadius: 16, offset: const Offset(0, 7))],
+                                  ),
+                                  child: const Icon(Icons.add_rounded, color: Colors.white, size: 25),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 16),
+                        Entrance(
+                          index: 1,
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: Row(
                               children: [
-                                Text('下载', style: context.texts.displayMedium),
-                                const SizedBox(height: 4),
-                                Text(
-                                  _tasks.isEmpty ? '${tool?.label ?? ''} 任务' : '$activeCount 个进行中 · ${formatSpeed(speed)}',
-                                  style: context.texts.bodySmall?.copyWith(color: c.textTertiary, fontSize: 12.5),
+                                for (final item in state.downloadTools)
+                                  Padding(
+                                    padding: const EdgeInsets.only(right: 8),
+                                    child: _ToolChip(
+                                      tool: item,
+                                      selected: state.activeTool?.id == item.id,
+                                      onTap: () async {
+                                        await state.setActiveTool(item.id);
+                                        await _load();
+                                      },
+                                    ),
+                                  ),
+                                _ToolChip(
+                                  tool: const DownloadTool(id: '__add__', type: DownloadToolType.qbittorrent, name: '添加'),
+                                  selected: false,
+                                  add: true,
+                                  onTap: _addToolFlow,
                                 ),
                               ],
                             ),
                           ),
-                          CircleIconButton(icon: Icons.tune_rounded, onTap: _manageTools, size: 20),
-                          const SizedBox(width: 2),
-                          GestureDetector(
-                            onTap: _addTask,
-                            child: Container(
-                              width: 44,
-                              height: 44,
-                              decoration: BoxDecoration(
-                                gradient: const LinearGradient(colors: [Color(0xFF4BE0A8), Color(0xFF16C08E)]),
-                                borderRadius: BorderRadius.circular(15),
-                                boxShadow: [BoxShadow(color: const Color(0xFF16C08E).withValues(alpha: 0.35), blurRadius: 16, offset: const Offset(0, 7))],
+                        ),
+                        const SizedBox(height: 14),
+                        Entrance(
+                          index: 2,
+                          child: Row(
+                            children: [
+                              CategoryChip(label: '全部 ${_tasks.length}', selected: _filter == 0, onTap: () => setState(() => _filter = 0)),
+                              const SizedBox(width: 8),
+                              CategoryChip(label: '进行中', selected: _filter == 1, onTap: () => setState(() => _filter = 1)),
+                              const SizedBox(width: 8),
+                              CategoryChip(label: '已完成', selected: _filter == 2, onTap: () => setState(() => _filter = 2)),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: RefreshIndicator(
+                      onRefresh: _load,
+                      color: c.primary,
+                      child: ListView(
+                        physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                        padding: const EdgeInsets.fromLTRB(20, 0, 20, 132),
+                        children: [
+                          if (_loading)
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 60),
+                              child: Center(child: CircularProgressIndicator(strokeWidth: 2.4)),
+                            )
+                          else if (_error != null)
+                            EmptyHint(
+                              icon: Icons.cloud_off_rounded,
+                              title: '无法读取下载任务',
+                              subtitle: _error,
+                              action: Row(
+                                mainAxisAlignment: MainAxisAlignment.center,
+                                children: [
+                                  FilledButton(onPressed: _load, style: FilledButton.styleFrom(minimumSize: const Size(100, 42)), child: const Text('重试')),
+                                  const SizedBox(width: 10),
+                                  OutlinedButton(onPressed: _manageTools, style: OutlinedButton.styleFrom(minimumSize: const Size(100, 42)), child: const Text('检查配置')),
+                                ],
                               ),
-                              child: const Icon(Icons.add_rounded, color: Colors.white, size: 25),
-                            ),
-                          ),
+                            )
+                          else if (visible.isEmpty)
+                            EmptyHint(
+                              icon: Icons.download_done_rounded,
+                              title: _filter == 0 ? '还没有下载任务' : '这里还没有任务',
+                              subtitle: '点击右上角 + 添加第一个下载',
+                              action: FilledButton(
+                                onPressed: _addTask,
+                                style: FilledButton.styleFrom(minimumSize: const Size(140, 44)),
+                                child: const Text('添加下载'),
+                              ),
+                            )
+                          else
+                            for (var i = 0; i < visible.length; i++)
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 10),
+                                child: Entrance(
+                                  index: 3 + i,
+                                  child: _TaskCard(
+                                    task: visible[i],
+                                    onMore: () => _showActions(visible[i]),
+                                    onToggle: () => _action(visible[i], visible[i].isPaused ? 'resume' : 'pause'),
+                                  ),
+                                ),
+                              ),
                         ],
                       ),
                     ),
-                    const SizedBox(height: 16),
-                    Entrance(
-                      index: 1,
-                      child: Wrap(
-                        spacing: 8,
-                        runSpacing: 8,
-                        children: [
-                          for (final item in state.downloadTools)
-                            _ToolChip(
-                              tool: item,
-                              selected: state.activeTool?.id == item.id,
-                              onTap: () async {
-                                await state.setActiveTool(item.id);
-                                await _load();
-                              },
-                            ),
-                          _ToolChip(
-                            tool: const DownloadTool(id: '__add__', type: DownloadToolType.qbittorrent, name: '添加'),
-                            selected: false,
-                            add: true,
-                            onTap: _addToolFlow,
-                          ),
-                        ],
-                      ),
-                    ),                    const SizedBox(height: 14),
-                    Entrance(
-                      index: 2,
-                      child: Row(
-                        children: [
-                          CategoryChip(label: '全部 ${_tasks.length}', selected: _filter == 0, onTap: () => setState(() => _filter = 0)),
-                          const SizedBox(width: 8),
-                          CategoryChip(label: '进行中', selected: _filter == 1, onTap: () => setState(() => _filter = 1)),
-                          const SizedBox(width: 8),
-                          CategoryChip(label: '已完成', selected: _filter == 2, onTap: () => setState(() => _filter = 2)),
-                        ],
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    if (_loading)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 60),
-                        child: Center(child: CircularProgressIndicator(strokeWidth: 2.4)),
-                      )
-                    else if (_error != null)
-                      EmptyHint(
-                        icon: Icons.cloud_off_rounded,
-                        title: '无法读取下载任务',
-                        subtitle: _error,
-                        action: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            FilledButton(onPressed: _load, style: FilledButton.styleFrom(minimumSize: const Size(100, 42)), child: const Text('重试')),
-                            const SizedBox(width: 10),
-                            OutlinedButton(onPressed: _manageTools, style: OutlinedButton.styleFrom(minimumSize: const Size(100, 42)), child: const Text('检查配置')),
-                          ],
-                        ),
-                      )
-                    else if (visible.isEmpty)
-                      EmptyHint(
-                        icon: Icons.download_done_rounded,
-                        title: _filter == 0 ? '还没有下载任务' : '这里还没有任务',
-                        subtitle: '点击右上角 + 添加第一个下载',
-                        action: FilledButton(
-                          onPressed: _addTask,
-                          style: FilledButton.styleFrom(minimumSize: const Size(140, 44)),
-                          child: const Text('添加下载'),
-                        ),
-                      )
-                    else
-                      for (var i = 0; i < visible.length; i++)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 10),
-                          child: Entrance(
-                            index: 3 + i,
-                            child: _TaskCard(
-                              task: visible[i],
-                              onMore: () => _showActions(visible[i]),
-                              onToggle: () => _action(visible[i], visible[i].isPaused ? 'resume' : 'pause'),
-                            ),
-                          ),
-                        ),
-                  ],
-                ),
+                  ),
+                ],
               ),
       ),
     );
   }
-
   Widget _buildNoTools(AppColors c) {
     return ListView(
       padding: const EdgeInsets.fromLTRB(20, 10, 20, 132),

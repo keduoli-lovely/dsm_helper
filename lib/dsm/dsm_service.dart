@@ -748,29 +748,35 @@ class DsmService {
   }
 
   /// 选取一个 DSM 文件夹作为相册（只取图片文件）。
-  final Map<String, List<PhotoItem>> _folderPhotoCache = {};
+  final Map<String, _FolderPhotoCursor> _folderCursors = {};
 
-  /// 递归遍历目录（FileStation.List），把图片元数据缓存起来；页面再按 offset/limit 懒加载。
   Future<List<PhotoItem>> folderPhotoPage(String path, {int offset = 0, int limit = 80}) async {
     if (demo) {
       final entries = await files(path);
       return entries.where((e) => !e.isDir && e.kind == FileKind.image).map(_photoFromEntry).toList();
     }
-    final index = _folderPhotoCache[path] ??= await _buildFolderPhotoIndex(path);
-    return index.skip(offset).take(limit).toList();
+    final cursor = _folderCursors.putIfAbsent(path, () => _FolderPhotoCursor(path));
+    final target = offset + limit;
+    var scanned = 0;
+    while (!cursor.done && cursor.images.length < target && scanned < 5000) {
+      scanned++;
+      await _scanNextFolder(cursor);
+    }
+    return cursor.images.skip(offset).take(limit).toList();
   }
 
-  Future<List<PhotoItem>> _buildFolderPhotoIndex(String path) async {
-    final images = <PhotoItem>[];
-    final seen = <String>{};
-    final queue = <String>[path];
-    var dirs = 0;
-    while (queue.isNotEmpty && dirs < 300 && images.length < 3000) {
-      final dir = queue.removeAt(0);
-      dirs++;
-      var offset = 0;
-      while (true) {
-        final data = await client.callMap(
+  Future<void> _scanNextFolder(_FolderPhotoCursor cursor) async {
+    if (cursor.queue.isEmpty) {
+      cursor.done = true;
+      return;
+    }
+    final dir = cursor.queue.removeAt(0);
+    if (!cursor.visited.add(dir)) return;
+    var offset = 0;
+    while (true) {
+      Map<String, dynamic> data;
+      try {
+        data = await client.callMap(
           api: 'SYNO.FileStation.List',
           method: 'list',
           version: 2,
@@ -783,41 +789,40 @@ class DsmService {
             'additional': ['size', 'time', 'type'],
           },
         );
-        final files = (data['files'] as List?) ?? const [];
-        for (final raw in files.whereType<Map>()) {
-          final map = raw.cast<String, dynamic>();
-          final filePath = '${map['path'] ?? ''}';
-          if (map['isdir'] == true) {
-            if (filePath.isNotEmpty) queue.add(filePath);
-            continue;
-          }
-          final name = '${map['name'] ?? ''}';
-          if (!RegExp(r'\.(jpe?g|png|gif|webp|bmp|heic|heif)$', caseSensitive: false).hasMatch(name)) continue;
-          if (filePath.isEmpty || !seen.add(filePath)) continue;
-          final additional = (map['additional'] as Map?)?.cast<String, dynamic>() ?? const {};
-          final time = (additional['time'] as Map?)?.cast<String, dynamic>() ?? const {};
-          final mtime = (time['mtime'] as num?)?.toInt();
-          final size = (additional['size'] as num?)?.toInt() ?? 0;
-          images.add(PhotoItem(
-            id: filePath,
-            name: name,
-            takenAt: mtime == null ? null : DateTime.fromMillisecondsSinceEpoch(mtime * 1000),
-            createdAt: mtime == null ? null : DateTime.fromMillisecondsSinceEpoch(mtime * 1000),
-            size: size,
-            path: filePath,
-            thumbUrl: thumbnailUri(filePath, size: 'small')?.toString() ?? '',
-            originalUrl: downloadUri(filePath, open: true).toString(),
-          ));
-        }
-        final total = (data['total'] as num?)?.toInt() ?? files.length;
-        offset += files.length;
-        if (files.isEmpty || files.length < 500 || offset >= total) break;
+      } catch (_) {
+        return;
       }
+      final files = (data['files'] as List?) ?? const [];
+      for (final raw in files.whereType<Map>()) {
+        final map = raw.cast<String, dynamic>();
+        final filePath = '${map['path'] ?? ''}';
+        if (map['isdir'] == true) {
+          if (filePath.isNotEmpty) cursor.queue.add(filePath);
+          continue;
+        }
+        final name = '${map['name'] ?? ''}';
+        if (!RegExp(r'\.(jpe?g|png|gif|webp|bmp|heic|heif)$', caseSensitive: false).hasMatch(name)) continue;
+        if (!cursor.visited.add(filePath)) continue;
+        final additional = (map['additional'] as Map?)?.cast<String, dynamic>() ?? const {};
+        final time = (additional['time'] as Map?)?.cast<String, dynamic>() ?? const {};
+        final mtime = (time['mtime'] as num?)?.toInt();
+        final size = (additional['size'] as num?)?.toInt() ?? 0;
+        cursor.images.add(PhotoItem(
+          id: filePath,
+          name: name,
+          takenAt: mtime == null ? null : DateTime.fromMillisecondsSinceEpoch(mtime * 1000),
+          createdAt: mtime == null ? null : DateTime.fromMillisecondsSinceEpoch(mtime * 1000),
+          size: size,
+          path: filePath,
+          thumbUrl: thumbnailUri(filePath, size: 'small')?.toString() ?? '',
+          originalUrl: downloadUri(filePath, open: true).toString(),
+        ));
+      }
+      final total = (data['total'] as num?)?.toInt() ?? files.length;
+      offset += files.length;
+      if (files.isEmpty || files.length < 500 || offset >= total) break;
     }
-    images.sort((a, b) => (b.takenAt ?? DateTime(0)).compareTo(a.takenAt ?? DateTime(0)));
-    return images;
   }
-
   PhotoItem _photoFromEntry(FileEntry entry) => PhotoItem(
         id: entry.path,
         name: entry.name,
@@ -830,7 +835,7 @@ class DsmService {
       );
 
   void resetFolderPhotoTask(String path) {
-    _folderPhotoCache.remove(path);
+    _folderCursors.remove(path);
   }
   Future<Map<String, dynamic>> fileInfo(String path) async {
     final data = await client.callMap(
@@ -1065,5 +1070,16 @@ class DsmService {
       };
     }
     return client.callMap(api: 'SYNO.Core.System', method: 'info', version: 1, params: {'type': 'network'});
+  }
+}
+
+class _FolderPhotoCursor {
+  final String root;
+  final List<String> queue = [];
+  final Set<String> visited = {};
+  final List<PhotoItem> images = [];
+  bool done = false;
+  _FolderPhotoCursor(this.root) {
+    queue.add(root);
   }
 }

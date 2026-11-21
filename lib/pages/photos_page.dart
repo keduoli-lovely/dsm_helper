@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:file_picker/file_picker.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -15,6 +16,7 @@ import '../state/app_state.dart';
 import '../theme/app_theme.dart';
 import '../widgets/app_icon_tile.dart';
 import '../widgets/feedback.dart';
+import '../widgets/share_sheet.dart';
 import '../widgets/surfaces.dart';
 import '../widgets/ui_kit.dart';
 import 'folder_picker_page.dart';
@@ -624,8 +626,16 @@ class _PhotoViewerPageState extends State<_PhotoViewerPage> {
     if (source.type == PhotoSourceType.folder && item.path.isNotEmpty) {
       final service = state.service;
       if (service == null) return;
+      final options = await showShareOptions(context, fileName: item.name);
+      if (options == null) return;
+      final expireDate = options.days <= 0 ? null : DateTime.now().add(Duration(days: options.days));
       try {
-        final link = await service.createSharingLink(item.path);
+        final link = await service.createSharingLink(
+          item.path,
+          password: options.password,
+          expireDate: expireDate,
+          expireTimes: options.times,
+        );
         if (mounted) _showLink(link.url);
       } on DsmException catch (e) {
         if (mounted) showToast(context, e.message, icon: Icons.error_outline_rounded);
@@ -669,9 +679,25 @@ class _PhotoViewerPageState extends State<_PhotoViewerPage> {
     }
   }
 
-  Future<void> _openOriginal() async {
+  Future<void> _saveImage() async {
     if (_url.isEmpty) return;
-    await launchUrl(Uri.parse(_url), mode: LaunchMode.externalApplication);
+    setState(() => _sharing = true);
+    try {
+      final response = await http.get(Uri.parse(_url), headers: item.headers).timeout(const Duration(seconds: 40));
+      if (response.statusCode != 200) throw DsmException(-1, '下载图片失败（HTTP ）');
+      final bytes = response.bodyBytes;
+      final uri = await FilePicker.saveFile(
+        dialogTitle: '保存图片',
+        fileName: item.name.isEmpty ? 'photo.jpg' : item.name,
+        bytes: bytes,
+      );
+      if (uri == null) return;
+      if (mounted) showToast(context, '图片已保存');
+    } catch (e) {
+      if (mounted) showToast(context, '保存失败：', icon: Icons.error_outline_rounded);
+    } finally {
+      if (mounted) setState(() => _sharing = false);
+    }
   }
 
   @override
@@ -679,9 +705,45 @@ class _PhotoViewerPageState extends State<_PhotoViewerPage> {
     final date = item.takenAt ?? item.createdAt;
     return Scaffold(
       backgroundColor: const Color(0xFF08090D),
-      body: Stack(
+      body: Column(
         children: [
-          Positioned.fill(
+          if (_chrome)
+            Container(
+              color: Colors.black,
+              child: SafeArea(
+                bottom: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(14, 8, 14, 10),
+                  child: Row(
+                    children: [
+                      _circleAction(Icons.arrow_back_ios_new_rounded, () => Navigator.of(context).maybePop()),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.center,
+                          children: [
+                            Text(
+                              date == null ? '图片' : '${date.month}月${date.day}日',
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600),
+                            ),
+                            if (date != null)
+                              Text(
+                                '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}',
+                                textAlign: TextAlign.center,
+                                style: const TextStyle(color: Colors.white70, fontSize: 12),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      _circleAction(Icons.more_vert_rounded, _showDetails),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          Expanded(
             child: GestureDetector(
               onTap: () => setState(() => _chrome = !_chrome),
               child: _url.isEmpty
@@ -706,87 +768,28 @@ class _PhotoViewerPageState extends State<_PhotoViewerPage> {
                     ),
             ),
           ),
-          AnimatedOpacity(
-            duration: const Duration(milliseconds: 180),
-            opacity: _chrome ? 1 : 0,
-            child: IgnorePointer(
-              ignoring: !_chrome,
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black87, Colors.transparent]),
-                  ),
-                  child: SafeArea(
-                    bottom: false,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(14, 8, 14, 8),
-                      child: Row(
-                        children: [
-                          _circleAction(Icons.arrow_back_ios_new_rounded, () => Navigator.of(context).maybePop()),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.center,
-                              children: [
-                                Text(
-                                  date == null ? '图片' : '${date.month}月${date.day}日',
-                                  textAlign: TextAlign.center,
-                                  style: const TextStyle(color: Colors.white, fontSize: 17, fontWeight: FontWeight.w600),
-                                ),
-                                if (date != null)
-                                  Text(
-                                    '${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}',
-                                    textAlign: TextAlign.center,
-                                    style: const TextStyle(color: Colors.white70, fontSize: 12),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 12),
-                          _circleAction(Icons.more_vert_rounded, _showDetails),
-                        ],
-                      ),
-                    ),
+          if (_chrome)
+            Container(
+              color: Colors.black,
+              child: SafeArea(
+                top: false,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(20, 10, 20, 10),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      _bottomAction(_sharing ? Icons.hourglass_top_rounded : Icons.share_rounded, _sharing ? '处理中' : '分享', _share),
+                      const SizedBox(width: 84),
+                      _bottomAction(_sharing ? Icons.hourglass_top_rounded : Icons.download_rounded, _sharing ? '处理中' : '保存图片', _saveImage),
+                    ],
                   ),
                 ),
               ),
             ),
-          ),
-          AnimatedOpacity(
-            duration: const Duration(milliseconds: 180),
-            opacity: _chrome ? 1 : 0,
-            child: IgnorePointer(
-              ignoring: !_chrome,
-              child: Align(
-                alignment: Alignment.bottomCenter,
-                child: Container(
-                  decoration: const BoxDecoration(
-                    gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black87, Colors.transparent]),
-                  ),
-                  child: SafeArea(
-                    top: false,
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(20, 26, 20, 12),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          _bottomAction(_sharing ? Icons.hourglass_top_rounded : Icons.share_rounded, _sharing ? '处理中' : '分享', _share),
-                          const SizedBox(width: 84),
-                          _bottomAction(Icons.open_in_new_rounded, '查看原图', _openOriginal),
-                        ],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ),
         ],
       ),
     );
   }
-
   Widget _circleAction(IconData icon, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,

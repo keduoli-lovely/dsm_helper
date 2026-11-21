@@ -218,8 +218,10 @@ class Utilization {
       memUsed = ((totalRealKb - availKb) * 1024).round().clamp(0, memTotal);
       memPercent = (memUsed / memTotal * 100).clamp(0, 100).toDouble();
     }
-    if (memPercent <= 0 && _asDouble(mem['real_usage']) > 0) {
-      memPercent = _asDouble(mem['real_usage']).clamp(0, 100).toDouble();
+    // DSM 的 real_usage 已扣除缓存/缓冲，与 Web 页面显示的百分比一致，优先使用。
+    final realUsage = _asDouble(mem['real_usage']);
+    if (realUsage > 0) {
+      memPercent = realUsage.clamp(0, 100).toDouble();
       if (memTotal > 0) memUsed = (memTotal * memPercent / 100).round();
     }
 

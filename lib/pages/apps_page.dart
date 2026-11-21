@@ -178,135 +178,152 @@ class _AppsPageState extends State<AppsPage> {
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: PageScaffold(
-        child: RefreshIndicator(
-          onRefresh: _load,
-          color: c.primary,
-          child: ListView(
-            physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
-            padding: const EdgeInsets.fromLTRB(20, 10, 20, 132),
-            children: [
-              Entrance(
-                index: 0,
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.end,
-                  children: [
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('套件中心', style: context.texts.displayMedium),
-                          const SizedBox(height: 4),
-                          Text(
-                            _packages.isEmpty ? '管理已安装的套件' : '$running 个运行中 · 共 ${_packages.length} 个',
-                            style: context.texts.bodySmall?.copyWith(color: c.textTertiary, fontSize: 12.5),
+        child: Column(
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 10, 20, 0),
+              child: Column(
+                children: [
+                  Entrance(
+                    index: 0,
+                    child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text('套件中心', style: context.texts.displayMedium),
+                              const SizedBox(height: 4),
+                              Text(
+                                _packages.isEmpty ? '管理已安装的套件' : '$running 个运行中 · 共 ${_packages.length} 个',
+                                style: context.texts.bodySmall?.copyWith(color: c.textTertiary, fontSize: 12.5),
+                              ),
+                            ],
                           ),
+                        ),
+                        IconButton(
+                          onPressed: _load,
+                          icon: Icon(Icons.refresh_rounded, color: c.textSecondary, size: 21),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 14),
+                  Entrance(
+                    index: 1,
+                    child: SearchPill(controller: _search, hint: '搜索套件', onChanged: (v) => setState(() => _query = v.trim())),
+                  ),
+                  const SizedBox(height: 12),
+                  Entrance(
+                    index: 2,
+                    child: Row(
+                      children: [
+                        _FilterPill(label: '已安装', selected: !_library, onTap: () => setState(() => _library = false)),
+                        const SizedBox(width: 8),
+                        _FilterPill(
+                          label: '套件库',
+                          selected: _library,
+                          onTap: () {
+                            setState(() => _library = true);
+                            if (_catalog.isEmpty || _catalogError != null) _loadCatalog();
+                          },
+                        ),
+                        const Spacer(),
+                        if (_library)
+                          Flexible(
+                            child: Text(
+                              '${_catalog.length} 个${_updateCount > 0 ? ' · $_updateCount 可更新' : ''}',
+                              style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 10.5),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: 10),
+                  if (!_library)
+                    Row(
+                      children: [
+                        _FilterPill(label: '全部', selected: _filter == 0, onTap: () => setState(() => _filter = 0)),
+                        const SizedBox(width: 8),
+                        _FilterPill(label: '运行中', selected: _filter == 1, onTap: () => setState(() => _filter = 1)),
+                        const SizedBox(width: 8),
+                        _FilterPill(label: '已停止', selected: _filter == 2, onTap: () => setState(() => _filter = 2)),
+                      ],
+                    )
+                  else
+                    SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        children: [
+                          _FilterPill(label: '全部', selected: _libraryFilter == 0, onTap: () => setState(() => _libraryFilter = 0)),
+                          const SizedBox(width: 8),
+                          _FilterPill(label: '官方', selected: _libraryFilter == 1, onTap: () => setState(() => _libraryFilter = 1)),
+                          const SizedBox(width: 8),
+                          _FilterPill(label: '社区', selected: _libraryFilter == 2, onTap: () => setState(() => _libraryFilter = 2)),
+                          const SizedBox(width: 8),
+                          _FilterPill(label: '可更新', selected: _libraryFilter == 3, onTap: () => setState(() => _libraryFilter = 3)),
                         ],
                       ),
                     ),
-                    IconButton(
-                      onPressed: _load,
-                      icon: Icon(Icons.refresh_rounded, color: c.textSecondary, size: 21),
-                    ),
-                  ],
-                ),
+                ],
               ),
-              const SizedBox(height: 14),
-              Entrance(
-                index: 1,
-                child: SearchPill(controller: _search, hint: '搜索套件', onChanged: (v) => setState(() => _query = v.trim())),
-              ),
-              const SizedBox(height: 12),
-              Entrance(
-                index: 2,
-                child: Row(
+            ),
+            const SizedBox(height: 12),
+            Expanded(
+              child: RefreshIndicator(
+                onRefresh: _load,
+                color: c.primary,
+                child: ListView(
+                  physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+                  padding: const EdgeInsets.fromLTRB(20, 0, 20, 132),
                   children: [
-                    _FilterPill(label: '已安装', selected: !_library, onTap: () => setState(() => _library = false)),
-                    const SizedBox(width: 8),
-                    _FilterPill(
-                      label: '套件库',
-                      selected: _library,
-                      onTap: () {
-                        setState(() => _library = true);
-                        if (_catalog.isEmpty || _catalogError != null) _loadCatalog();
-                      },
-                    ),
-                    const Spacer(),
-                    if (_library)
-                      Text('${_catalog.length} 个套件${_updateCount > 0 ? ' · $_updateCount 可更新' : ''}', style: context.texts.labelSmall?.copyWith(color: c.textTertiary, fontSize: 10.5)),
-                  ],
-                ),
-              ),
-              if (!_library) ...[
-                const SizedBox(height: 10),
-                Row(
-                  children: [
-                    _FilterPill(label: '全部', selected: _filter == 0, onTap: () => setState(() => _filter = 0)),
-                    const SizedBox(width: 8),
-                    _FilterPill(label: '运行中', selected: _filter == 1, onTap: () => setState(() => _filter = 1)),
-                    const SizedBox(width: 8),
-                    _FilterPill(label: '已停止', selected: _filter == 2, onTap: () => setState(() => _filter = 2)),
-                  ],
-                ),
-              ] else ...[
-                const SizedBox(height: 10),
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: Row(
-                    children: [
-                      _FilterPill(label: '全部', selected: _libraryFilter == 0, onTap: () => setState(() => _libraryFilter = 0)),
-                      const SizedBox(width: 8),
-                      _FilterPill(label: '官方', selected: _libraryFilter == 1, onTap: () => setState(() => _libraryFilter = 1)),
-                      const SizedBox(width: 8),
-                      _FilterPill(label: '社区', selected: _libraryFilter == 2, onTap: () => setState(() => _libraryFilter = 2)),
-                      const SizedBox(width: 8),
-                      _FilterPill(label: '可更新', selected: _libraryFilter == 3, onTap: () => setState(() => _libraryFilter = 3)),
+                    if (_library) ...[
+                      if (_catalogLoading)
+                        const Padding(
+                          padding: EdgeInsets.symmetric(vertical: 60),
+                          child: Center(child: CircularProgressIndicator(strokeWidth: 2.4)),
+                        )
+                      else if (_catalogError != null)
+                        EmptyHint(
+                          icon: Icons.cloud_off_rounded,
+                          title: '无法读取套件库',
+                          subtitle: _catalogError,
+                          action: FilledButton(onPressed: _loadCatalog, style: FilledButton.styleFrom(minimumSize: const Size(120, 42)), child: const Text('重试')),
+                        )
+                      else if (_catalog.isEmpty)
+                        const EmptyHint(icon: Icons.storefront_rounded, title: '套件库为空', subtitle: '当前账号可能没有套件中心权限')
+                      else
+                        ..._catalogWidgets(state),
+                    ] else if (_loading)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 60),
+                        child: Center(child: CircularProgressIndicator(strokeWidth: 2.4)),
+                      )
+                    else if (_error != null)
+                      EmptyHint(
+                        icon: Icons.cloud_off_rounded,
+                        title: '无法读取套件列表',
+                        subtitle: _error,
+                        action: FilledButton(onPressed: _load, style: FilledButton.styleFrom(minimumSize: const Size(120, 42)), child: const Text('重试')),
+                      )
+                    else if (visible.isEmpty)
+                      const EmptyHint(icon: Icons.apps_rounded, title: '没有匹配的套件')
+                    else ...[
+                      if (_apps.isNotEmpty) ..._section('套件', Icons.apps_rounded, _apps, state),
+                      if (_system.isNotEmpty) ..._section('系统服务', Icons.shield_rounded, _system, state),
                     ],
-                  ),
+                  ],
                 ),
-              ],
-              const SizedBox(height: 16),
-              if (_library) ...[
-                if (_catalogLoading)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 60),
-                    child: Center(child: CircularProgressIndicator(strokeWidth: 2.4)),
-                  )
-                else if (_catalogError != null)
-                  EmptyHint(
-                    icon: Icons.cloud_off_rounded,
-                    title: '无法读取套件库',
-                    subtitle: _catalogError,
-                    action: FilledButton(onPressed: _loadCatalog, style: FilledButton.styleFrom(minimumSize: const Size(120, 42)), child: const Text('重试')),
-                  )
-                else if (_catalog.isEmpty)
-                  const EmptyHint(icon: Icons.storefront_rounded, title: '套件库为空', subtitle: '当前账号可能没有套件中心权限')
-                else
-                  ..._catalogWidgets(state),
-              ] else if (_loading)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 60),
-                  child: Center(child: CircularProgressIndicator(strokeWidth: 2.4)),
-                )
-              else if (_error != null)
-                EmptyHint(
-                  icon: Icons.cloud_off_rounded,
-                  title: '无法读取套件列表',
-                  subtitle: _error,
-                  action: FilledButton(onPressed: _load, style: FilledButton.styleFrom(minimumSize: const Size(120, 42)), child: const Text('重试')),
-                )
-              else if (visible.isEmpty)
-                const EmptyHint(icon: Icons.apps_rounded, title: '没有匹配的套件')
-              else ...[
-                if (_apps.isNotEmpty) ..._section('套件', Icons.apps_rounded, _apps, state),
-                if (_system.isNotEmpty) ..._section('系统服务', Icons.shield_rounded, _system, state),
-              ],
-            ],
-          ),
+              ),
+            ),
+          ],
         ),
       ),
     );
   }
-
   bool _versionGreater(String latest, String installed) {
     List<int> parse(String value) => RegExp(r'\d+').allMatches(value).map((m) => int.tryParse(m.group(0)!) ?? 0).toList();
     final a = parse(latest);
